@@ -18,16 +18,34 @@ router.post('/send', async (req, res) => {
     });
   }
   
-  // Format phone number (remove spaces, + sign)
-  const phone = to.replace(/[\s+]/g, '').replace(/^0/, '+43');
+  // Format phone number to E.164 format
+  let phone = to.replace(/[\s]/g, '');
+  
+  // Detect country and normalize accordingly
+  if (phone.startsWith('+')) {
+    // Already in international format, keep as is
+  } else if (phone.startsWith('0')) {
+    // Austrian format - prepend country code
+    phone = '+43' + phone.slice(1);
+  } else {
+    // Unknown format, try Austrian as default
+    phone = '+43' + phone;
+  }
+  
+  // Basic E.164 validation
+  if (!/^\+[1-9]\d{7,14}$/.test(phone)) {
+    return res.status(400).json({
+      success: false,
+      error: 'Ungültiges Telefonnummernformat. Erwartet: +43... (AT), +49... (DE), etc.'
+    });
+  }
   
   // Create personalized message
   const message = `Hallo ${patient_name}, wir sehen uns am ${appointment_date} um ${appointment_time} in der Praxis. Bitte bringen Sie Ihre Versichertenkarte mit. Ihr PhysioFlow`;
   
-  // If no API key, simulate sending
+  // If no API key, simulate sending (don't log patient name for privacy)
   if (!SMS77_API_KEY) {
-    console.log('📱 [SIMULATED SMS] To:', phone);
-    console.log('📱 [SIMULATED SMS] Message:', message);
+    console.log(`📱 [SIMULATED SMS] To: ${phone}, Time: ${appointment_time}, Date: ${appointment_date}`);
     
     return res.json({ 
       success: true, 

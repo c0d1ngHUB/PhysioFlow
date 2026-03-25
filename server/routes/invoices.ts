@@ -85,6 +85,14 @@ router.post('/', async (req, res) => {
     });
   }
   
+  // Validate positive numbers
+  if (units <= 0 || rate_per_unit <= 0) {
+    return res.status(400).json({ 
+      success: false, 
+      error: 'Einheiten und Satz müssen positive Zahlen sein' 
+    });
+  }
+  
   const total = units * rate_per_unit;
   const invoice_number = generateInvoiceNumber();
   
@@ -211,7 +219,7 @@ router.get('/:id/pdf', async (req, res) => {
     
   } catch (error) {
     console.error('PDF generation error:', error);
-    res.status(500).json({ success: false, error: (error as Error).message });
+    res.status(500).json({ success: false, error: 'PDF konnte nicht erstellt werden' });
   }
 });
 

@@ -29,13 +29,29 @@ router.get('/', (req, res) => {
     
     const expenses = db.prepare(sql).all(...params);
     
-    // Calculate totals
-    const totals = db.prepare(`
+    // Calculate totals (apply same filters to totals query)
+    let totalsSql = `
       SELECT 
         COALESCE(SUM(amount), 0) as total,
-        COALESCE SUM(CASE WHEN strftime('%Y-%m', date) = strftime('%Y-%m', 'now') THEN amount ELSE 0 END) as month_total
-      FROM expenses
-    `).get() as { total: number; month_total: number };
+        COALESCE(SUM(CASE WHEN strftime('%Y-%m', date) = strftime('%Y-%m', 'now') THEN amount ELSE 0 END), 0) as month_total
+      FROM expenses WHERE 1=1
+    `;
+    const totalsParams: any[] = [];
+    
+    if (category) {
+      totalsSql += ' AND category = ?';
+      totalsParams.push(category);
+    }
+    if (from) {
+      totalsSql += ' AND date >= ?';
+      totalsParams.push(from);
+    }
+    if (to) {
+      totalsSql += ' AND date <= ?';
+      totalsParams.push(to);
+    }
+    
+    const totals = db.prepare(totalsSql).get(...totalsParams) as { total: number; month_total: number };
     
     res.json({
       success: true,
@@ -100,6 +116,11 @@ router.put('/:id', (req, res) => {
     `).run(category, description, amount, date, receipt_path, id);
     
     const expense = db.prepare('SELECT * FROM expenses WHERE id = ?').get(id);
+    
+    if (!expense) {
+      return res.status(404).json({ success: false, error: 'Ausgabe nicht gefunden' });
+    }
+    
     res.json({ success: true, data: expense });
   } catch (error) {
     res.status(500).json({ success: false, error: 'Failed to update expense' });

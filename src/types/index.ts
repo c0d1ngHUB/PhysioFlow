@@ -23,9 +23,9 @@ export interface Appointment {
   notes?: string;
   sms_reminder: 0 | 1 | 2; // 0=kein SMS, 1=gesendet, 2=geplant
   created_at?: string;
-  // Joined fields
-  patient_name?: string;
-  patient_phone?: string;
+  // Joined fields (always present from API)
+  patient_name: string;
+  patient_phone: string;
 }
 
 // Invoice Type
@@ -39,10 +39,12 @@ export interface Invoice {
   total: number;
   description: string;
   created_at?: string;
-  paid: 0 | 1;
+  paid: boolean; // stored as 0/1 in DB, boolean in API
   // Joined fields
-  patient_name?: string;
-  patient_address?: string;
+  patient_name: string;
+  patient_email?: string;
+  patient_phone?: string;
+  patient_birthdate?: string;
 }
 
 // SMS Message Type
@@ -66,6 +68,8 @@ export interface DashboardStats {
   upcoming_appointments: number;
   unpaid_invoices: number;
   total_patients: number;
+  unpaid_invoices_total: number;
+  today_details: Appointment[];
 }
 
 // Expense Type

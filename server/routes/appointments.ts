@@ -65,6 +65,14 @@ router.post('/', (req, res) => {
     });
   }
   
+  // Validate time range
+  if (time_end <= time_start) {
+    return res.status(400).json({ 
+      success: false, 
+      error: 'Endzeit muss nach Startzeit liegen' 
+    });
+  }
+  
   try {
     const result = db.prepare(`
       INSERT INTO appointments (patient_id, date, time_start, time_end, treatment_type, notes, sms_reminder)
@@ -88,6 +96,14 @@ router.post('/', (req, res) => {
 router.put('/:id', (req, res) => {
   const { patient_id, date, time_start, time_end, treatment_type, notes, sms_reminder } = req.body;
   const { id } = req.params;
+  
+  // Validate time range if both times are provided
+  if (time_start && time_end && time_end <= time_start) {
+    return res.status(400).json({ 
+      success: false, 
+      error: 'Endzeit muss nach Startzeit liegen' 
+    });
+  }
   
   try {
     const result = db.prepare(`
