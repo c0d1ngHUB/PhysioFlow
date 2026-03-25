@@ -1,0 +1,43 @@
+{
+  "name": "physioflow",
+  "version": "1.0.0",
+  "description": "Terminmanagement für Physiotherapeuten mit SMS-Reminder und Honorarnoten",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "server": "tsx server/index.ts",
+    "start": "concurrently \"npm run dev\" \"npm run server\""
+  },
+  "dependencies": {
+    "@tailwindcss/postcss": "^4.2.2",
+    "@vitejs/plugin-react": "^6.0.1",
+    "autoprefixer": "^10.4.27",
+    "better-sqlite3": "^12.8.0",
+    "cors": "^2.8.6",
+    "dotenv": "^17.3.1",
+    "express": "^5.2.1",
+    "markdown-pdf": "^11.0.0",
+    "pdfkit": "^0.18.0",
+    "postcss": "^8.5.8",
+    "qrcode": "^1.5.4",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4",
+    "tailwindcss": "^4.2.2",
+    "typescript": "^5.9.3",
+    "vite": "^8.0.2",
+    "zustand": "^5.0.12"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.6",
+    "@types/node": "^25.5.0",
+    "@types/qrcode": "^1.5.6",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "concurrently": "^9.2.1",
+    "tsx": "^4.21.0"
+  }
+}
