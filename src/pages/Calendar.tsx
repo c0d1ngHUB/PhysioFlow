@@ -133,13 +133,21 @@ export default function Calendar() {
   const navigateDate = (direction: number) => {
     const date = new Date(selectedDate);
     if (viewMode === 'week') {
-      date.setDate(date.getDate() + (direction * 7));
+      // Get current week's Monday
+      const day = date.getDay();
+      const mondayOffset = day === 0 ? -6 : 1 - day; // Convert to Monday
+      const currentMonday = new Date(date);
+      currentMonday.setDate(date.getDate() + mondayOffset);
+      // Navigate by weeks from Monday
+      currentMonday.setDate(currentMonday.getDate() + (direction * 7));
+      setSelectedDate(currentMonday.toISOString().slice(0, 10));
     } else if (viewMode === 'month') {
       date.setMonth(date.getMonth() + direction);
+      setSelectedDate(date.toISOString().slice(0, 10));
     } else {
       date.setDate(date.getDate() + direction);
+      setSelectedDate(date.toISOString().slice(0, 10));
     }
-    setSelectedDate(date.toISOString().slice(0, 10));
   };
 
   const formatDate = (dateStr: string) => {
@@ -298,7 +306,7 @@ export default function Calendar() {
         </div>
       )}
 
-      {/* Week View - Simple Grid */}
+      {/* Week View - Simple Grid (Monday start) */}
       {viewMode === 'week' && (
         <div className="bg-surface rounded-lg shadow-sm border border-gray-200 overflow-auto">
           <div className="min-w-[800px]">
@@ -306,11 +314,14 @@ export default function Calendar() {
               <div className="p-2 border-r border-gray-200 w-20">Zeit</div>
               {Array.from({ length: 7 }, (_, i) => {
                 const d = new Date(selectedDate);
-                d.setDate(d.getDate() + i);
+                const day = d.getDay();
+                const mondayOffset = day === 0 ? -6 : 1 - day;
+                const monday = new Date(d);
+                monday.setDate(d.getDate() + mondayOffset + i);
                 return (
                   <div key={i} className="p-2 border-r border-gray-200 text-center">
-                    <div className="font-medium">{d.toLocaleDateString('de-AT', { weekday: 'short' })}</div>
-                    <div className="text-sm text-text-secondary">{d.toLocaleDateString('de-AT', { day: '2-digit', month: '2-digit' })}</div>
+                    <div className="font-medium">{monday.toLocaleDateString('de-AT', { weekday: 'short' })}</div>
+                    <div className="text-sm text-text-secondary">{monday.toLocaleDateString('de-AT', { day: '2-digit', month: '2-digit' })}</div>
                   </div>
                 );
               })}
@@ -322,8 +333,11 @@ export default function Calendar() {
                 </div>
                 {Array.from({ length: 7 }, (_, i) => {
                   const d = new Date(selectedDate);
-                  d.setDate(d.getDate() + i);
-                  const dateStr = d.toISOString().slice(0, 10);
+                  const day = d.getDay();
+                  const mondayOffset = day === 0 ? -6 : 1 - day;
+                  const monday = new Date(d);
+                  monday.setDate(d.getDate() + mondayOffset + i);
+                  const dateStr = monday.toISOString().slice(0, 10);
                   const apt = appointments.find(a => a.date === dateStr && a.time_start === time);
                   return (
                     <div key={i} className="p-1 border-r border-gray-200 min-h-[40px]">
@@ -352,7 +366,7 @@ export default function Calendar() {
         </div>
       )}
 
-      {/* Month View - Simple Calendar Grid */}
+      {/* Month View - Dynamic Calendar Grid (35-42 cells) */}
       {viewMode === 'month' && (
         <div className="bg-surface rounded-lg shadow-sm border border-gray-200 overflow-auto">
           <div className="min-w-[1000px]">
@@ -362,38 +376,77 @@ export default function Calendar() {
               ))}
             </div>
             <div className="grid grid-cols-7">
-              {Array.from({ length: 35 }, (_, i) => {
-                const d = new Date(selectedDate);
-                d.setDate(1);
-                d.setDate(d.getDate() + i - d.getDay() + 1);
-                const dateStr = d.toISOString().slice(0, 10);
-                const dayApts = appointments.filter(a => a.date === dateStr);
-                const isToday = dateStr === new Date().toISOString().slice(0, 10);
-                return (
-                  <div 
-                    key={i} 
-                    className={`border-r border-b border-gray-200 p-1 min-h-[100px] ${isToday ? 'bg-blue-50' : ''}`}
-                  >
-                    <div className={`text-right ${isToday ? 'font-bold text-primary' : 'text-text-secondary'}`}>
-                      {d.getDate()}
-                    </div>
-                    <div className="space-y-1 mt-1">
-                      {dayApts.slice(0, 3).map(apt => (
-                        <div 
-                          key={apt.id}
-                          className="bg-blue-100 border-l-2 border-primary px-1 py-0.5 rounded text-xs cursor-pointer hover:bg-blue-200 truncate"
-                          onClick={() => openModal(apt)}
-                        >
-                          {apt.time_start} {(apt.patient_name || 'Patient').split(' ')[1]}
+              {(() => {
+                // Calculate month bounds
+                const selected = new Date(selectedDate);
+                const year = selected.getFullYear();
+                const month = selected.getMonth();
+                
+                // First day of month
+                const firstDay = new Date(year, month, 1);
+                // Last day of month
+                const lastDay = new Date(year, month + 1, 0);
+                const daysInMonth = lastDay.getDate();
+                
+                // Get weekday of first day (0=Sun, 1=Mon, ..., 6=Sat)
+                const firstWeekday = firstDay.getDay();
+                // Convert to Monday-based (0=Mon, ..., 6=Sun)
+                const mondayOffset = firstWeekday === 0 ? 6 : firstWeekday - 1;
+                
+                // Total cells needed: offset + days in month
+                const totalCells = mondayOffset + daysInMonth;
+                // Round up to full weeks (7 cells each)
+                const weeks = Math.ceil(totalCells / 7);
+                const cellCount = weeks * 7; // 35, 42, etc.
+                
+                return Array.from({ length: cellCount }, (_, i) => {
+                  const d = new Date(year, month, 1);
+                  d.setDate(1 + i - mondayOffset);
+                  
+                  // Skip if before month start
+                  if (d.getMonth() !== month) {
+                    return (
+                      <div 
+                        key={i} 
+                        className="border-r border-b border-gray-200 p-1 min-h-[100px] bg-gray-50"
+                      >
+                        <div className="text-right text-gray-300">
+                          {d.getDate()}
                         </div>
-                      ))}
-                      {dayApts.length > 3 && (
-                        <div className="text-xs text-text-secondary text-center">+{dayApts.length - 3} mehr</div>
-                      )}
+                      </div>
+                    );
+                  }
+                  
+                  const dateStr = d.toISOString().slice(0, 10);
+                  const dayApts = appointments.filter(a => a.date === dateStr);
+                  const isToday = dateStr === new Date().toISOString().slice(0, 10);
+                  
+                  return (
+                    <div 
+                      key={i} 
+                      className={`border-r border-b border-gray-200 p-1 min-h-[100px] ${isToday ? 'bg-blue-50' : ''}`}
+                    >
+                      <div className={`text-right ${isToday ? 'font-bold text-primary' : 'text-text-secondary'}`}>
+                        {d.getDate()}
+                      </div>
+                      <div className="space-y-1 mt-1">
+                        {dayApts.slice(0, 3).map(apt => (
+                          <div 
+                            key={apt.id}
+                            className="bg-blue-100 border-l-2 border-primary px-1 py-0.5 rounded text-xs cursor-pointer hover:bg-blue-200 truncate"
+                            onClick={() => openModal(apt)}
+                          >
+                            {apt.time_start} {(apt.patient_name || 'Patient').split(' ')[1]}
+                          </div>
+                        ))}
+                        {dayApts.length > 3 && (
+                          <div className="text-xs text-text-secondary text-center">+{dayApts.length - 3} mehr</div>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                );
-              })}
+                  );
+                });
+              })()}
             </div>
           </div>
         </div>

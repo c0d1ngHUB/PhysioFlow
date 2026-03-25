@@ -102,7 +102,7 @@ export default function Invoices() {
       const res = await fetch(`/api/invoices/${invoice.id}/paid`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ paid: !invoice.paid })
+        body: JSON.stringify({ paid: invoice.paid === 0 ? 1 : 0 })
       });
       const data = await res.json();
       if (data.success) {
@@ -128,7 +128,7 @@ export default function Invoices() {
     }
   };
 
-  const totalUnpaid = invoices.filter(i => !i.paid).reduce((sum, i) => sum + i.total, 0);
+  const totalUnpaid = invoices.filter(i => i.paid === 0).reduce((sum, i) => sum + i.total, 0);
 
   if (loading) {
     return <div className="flex items-center justify-center h-64"><div className="w-8 h-8 border-2 border-blue-200 border-t-blue-600 rounded-full animate-spin"></div></div>;
@@ -150,7 +150,7 @@ export default function Invoices() {
       {/* Filter */}
       <div className="flex gap-2">
         <button onClick={() => setFilterPaid('all')} className={`px-4 py-2 rounded-lg font-medium transition-colors ${filterPaid === 'all' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-600 hover:bg-gray-300'}`}>Alle</button>
-        <button onClick={() => setFilterPaid('unpaid')} className={`px-4 py-2 rounded-lg font-medium transition-colors ${filterPaid === 'unpaid' ? 'bg-amber-500 text-white' : 'bg-gray-200 text-gray-600 hover:bg-gray-300'}`}>Offen ({invoices.filter(i => !i.paid).length})</button>
+        <button onClick={() => setFilterPaid('unpaid')} className={`px-4 py-2 rounded-lg font-medium transition-colors ${filterPaid === 'unpaid' ? 'bg-amber-500 text-white' : 'bg-gray-200 text-gray-600 hover:bg-gray-300'}`}>Offen ({invoices.filter(i => i.paid === 0).length})</button>
         <button onClick={() => setFilterPaid('paid')} className={`px-4 py-2 rounded-lg font-medium transition-colors ${filterPaid === 'paid' ? 'bg-emerald-500 text-white' : 'bg-gray-200 text-gray-600 hover:bg-gray-300'}`}>Bezahlt</button>
       </div>
 
@@ -162,7 +162,7 @@ export default function Invoices() {
         </div>
         <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
           <p className="text-sm text-gray-500 font-medium">Bezahlt (dieser Monat)</p>
-          <p className="text-3xl font-semibold text-emerald-600 mt-1">{formatCurrency(invoices.filter(i => i.paid && new Date(i.created_at || '').getMonth() === new Date().getMonth()).reduce((s, i) => s + i.total, 0))}</p>
+          <p className="text-3xl font-semibold text-emerald-600 mt-1">{formatCurrency(invoices.filter(i => i.paid === 1 && new Date(i.created_at || '').getMonth() === new Date().getMonth()).reduce((s, i) => s + i.total, 0))}</p>
         </div>
         <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
           <p className="text-sm text-gray-500 font-medium">Gesamt (alle Zeit)</p>

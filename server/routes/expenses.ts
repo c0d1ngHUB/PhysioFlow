@@ -107,13 +107,13 @@ router.put('/:id', (req, res) => {
     
     db.prepare(`
       UPDATE expenses 
-      SET category = COALESCE(?, category),
-          description = COALESCE(?, description),
-          amount = COALESCE(?, amount),
-          date = COALESCE(?, date),
-          receipt_path = COALESCE(?, receipt_path)
+      SET category = ?,
+          description = ?,
+          amount = ?,
+          date = ?,
+          receipt_path = ?
       WHERE id = ?
-    `).run(category, description, amount, date, receipt_path, id);
+    `).run(category, description ?? null, amount, date, receipt_path ?? null, id);
     
     const expense = db.prepare('SELECT * FROM expenses WHERE id = ?').get(id);
     

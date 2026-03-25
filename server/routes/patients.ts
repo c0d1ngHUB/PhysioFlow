@@ -57,7 +57,7 @@ router.put('/:id', (req, res) => {
       UPDATE patients 
       SET first_name = ?, last_name = ?, phone = ?, email = ?, birthdate = ?, notes = ?
       WHERE id = ?
-    `).run(first_name, last_name, phone, email, birthdate, notes, id);
+    `).run(first_name, last_name, phone ?? null, email ?? null, birthdate ?? null, notes ?? null, id);
     
     if (result.changes === 0) {
       return res.status(404).json({ success: false, error: 'Patient nicht gefunden' });

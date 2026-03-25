@@ -39,7 +39,7 @@ export interface Invoice {
   total: number;
   description: string;
   created_at?: string;
-  paid: boolean; // stored as 0/1 in DB, boolean in API
+  paid: number; // stored as 0/1 in DB (SQLite INTEGER)
   // Joined fields
   patient_name: string;
   patient_email?: string;
