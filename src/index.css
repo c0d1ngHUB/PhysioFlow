@@ -1,14 +1,16 @@
 @import "tailwindcss";
 
 :root {
-  --color-primary: #2563EB;
-  --color-secondary: #059669;
-  --color-accent: #F59E0B;
-  --color-background: #F8FAFC;
+  --color-primary: #1E3A5F;
+  --color-secondary: #4A5568;
+  --color-accent: #718096;
+  --color-background: #F7F7F7;
   --color-surface: #FFFFFF;
-  --color-text-primary: #1E293B;
-  --color-text-secondary: #64748B;
-  --color-error: #DC2626;
+  --color-text-primary: #111111;
+  --color-text-secondary: #4A5568;
+  --color-error: #9B2C2C;
+  --color-success: #276749;
+  --color-border: #E2E8F0;
 }
 
 * {
@@ -17,33 +19,85 @@
 
 body {
   margin: 0;
-  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  font-family: 'Segoe UI', 'Calibri', system-ui, -apple-system, sans-serif;
   background-color: var(--color-background);
   color: var(--color-text-primary);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  font-size: 14px;
+  line-height: 1.5;
 }
 
 .font-mono {
-  font-family: 'JetBrains Mono', monospace;
+  font-family: 'Consolas', 'Courier New', monospace;
 }
 
 /* Scrollbar styling */
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 6px;
+  height: 6px;
 }
 
 ::-webkit-scrollbar-track {
-  background: #f1f1f1;
-  border-radius: 4px;
+  background: transparent;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #c1c1c1;
-  border-radius: 4px;
+  background: #cbd5e0;
+  border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #a1a1a1;
+  background: #a0aec0;
+}
+
+/* Form styling */
+input, select, textarea {
+  border: 1px solid var(--color-border);
+  border-radius: 3px;
+  padding: 6px 10px;
+  background: white;
+  font-size: 13px;
+}
+
+input:focus, select:focus, textarea:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 2px rgba(30, 58, 95, 0.1);
+}
+
+/* Button base styles */
+button {
+  cursor: pointer;
+  border-radius: 3px;
+  font-weight: 500;
+  font-size: 13px;
+}
+
+/* Table styling */
+table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 13px;
+}
+
+th {
+  background: #f8f8f8;
+  font-weight: 600;
+  text-align: left;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--color-border);
+  color: var(--color-text-secondary);
+  text-transform: uppercase;
+  font-size: 11px;
+  letter-spacing: 0.5px;
+}
+
+td {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+tr:hover {
+  background: #fafafa;
 }
