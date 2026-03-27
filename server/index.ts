@@ -32,9 +32,10 @@ app.use('/api/expenses', expensesRouter);
 
 // Serve static files in production
 if (process.env.NODE_ENV === 'production') {
-  const distPath = path.join(__dirname, '../../dist');
+  const distPath = path.resolve(process.cwd(), 'dist');
+  console.log(`📁 Serving static files from: ${distPath}`);
   app.use(express.static(distPath));
-  app.get('*', (req, res) => {
+  app.get(/.*/, (req, res) => {
     res.sendFile(path.join(distPath, 'index.html'));
   });
 }
