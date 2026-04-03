@@ -28,7 +28,7 @@ router.get('/:id', (req, res) => {
 
 // Create patient
 router.post('/', (req, res) => {
-  const { first_name, last_name, phone, email, birthdate, notes } = req.body;
+  const { first_name, last_name, phone, email, birthdate, notes, address } = req.body;
   
   if (!first_name || !last_name) {
     return res.status(400).json({ success: false, error: 'Vorname und Nachname sind erforderlich' });
@@ -36,9 +36,9 @@ router.post('/', (req, res) => {
   
   try {
     const result = db.prepare(`
-      INSERT INTO patients (first_name, last_name, phone, email, birthdate, notes)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `).run(first_name, last_name, phone || null, email || null, birthdate || null, notes || null);
+      INSERT INTO patients (first_name, last_name, phone, email, birthdate, notes, address)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run(first_name, last_name, phone || null, email || null, birthdate || null, notes || null, address || null);
     
     const patient = db.prepare('SELECT * FROM patients WHERE id = ?').get(result.lastInsertRowid);
     res.status(201).json({ success: true, data: patient });
@@ -49,15 +49,15 @@ router.post('/', (req, res) => {
 
 // Update patient
 router.put('/:id', (req, res) => {
-  const { first_name, last_name, phone, email, birthdate, notes } = req.body;
+  const { first_name, last_name, phone, email, birthdate, notes, address } = req.body;
   const { id } = req.params;
   
   try {
     const result = db.prepare(`
       UPDATE patients 
-      SET first_name = ?, last_name = ?, phone = ?, email = ?, birthdate = ?, notes = ?
+      SET first_name = ?, last_name = ?, phone = ?, email = ?, birthdate = ?, notes = ?, address = ?
       WHERE id = ?
-    `).run(first_name, last_name, phone, email, birthdate, notes, id);
+    `).run(first_name, last_name, phone, email, birthdate, notes, address, id);
     
     if (result.changes === 0) {
       return res.status(404).json({ success: false, error: 'Patient nicht gefunden' });
@@ -78,6 +78,37 @@ router.delete('/:id', (req, res) => {
       return res.status(404).json({ success: false, error: 'Patient nicht gefunden' });
     }
     res.json({ success: true, message: 'Patient erfolgreich gelöscht' });
+  } catch (error) {
+    res.status(500).json({ success: false, error: (error as Error).message });
+  }
+});
+
+// Get patient history (appointments + invoices)
+router.get('/:id/history', (req, res) => {
+  const { id } = req.params;
+
+  try {
+    // Patient details
+    const patient = db.prepare('SELECT * FROM patients WHERE id = ?').get(id);
+    if (!patient) {
+      return res.status(404).json({ success: false, error: 'Patient nicht gefunden' });
+    }
+
+    // Appointments for this patient
+    const appointments = db.prepare(`
+      SELECT * FROM appointments
+      WHERE patient_id = ?
+      ORDER BY date DESC, time_start DESC
+    `).all(id);
+
+    // Invoices for this patient
+    const invoices = db.prepare(`
+      SELECT * FROM invoices
+      WHERE patient_id = ?
+      ORDER BY created_at DESC
+    `).all(id);
+
+    res.json({ success: true, data: { patient, appointments, invoices } });
   } catch (error) {
     res.status(500).json({ success: false, error: (error as Error).message });
   }

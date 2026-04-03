@@ -166,6 +166,47 @@ export default function Calendar() {
     });
   };
 
+  // Helper: get Monday of the week containing a date
+  const getWeekStart = (date: Date): Date => {
+    const d = new Date(date);
+    const day = d.getDay(); // 0=Sun, 1=Mon, ...
+    const diff = day === 0 ? -6 : 1 - day; // Adjust Sunday to be end of week
+    d.setDate(d.getDate() + diff);
+    d.setHours(0, 0, 0, 0);
+    return d;
+  };
+
+  // Helper: get calendar grid days for month view (includes prev/next month days)
+  const getMonthCalendarDays = (yearMonth: string): Array<{ date: Date; isCurrentMonth: boolean }> => {
+    const [year, month] = yearMonth.split('-').map(Number);
+    const firstDay = new Date(year, month - 1, 1);
+    const lastDay = new Date(year, month, 0);
+    const startDay = firstDay.getDay(); // 0=Sun
+    const days: Array<{ date: Date; isCurrentMonth: boolean }> = [];
+
+    // Adjust start: Monday-based (Mon=0), so shift Sunday to end
+    const offset = startDay === 0 ? 6 : startDay - 1;
+
+    // Previous month days
+    for (let i = offset - 1; i >= 0; i--) {
+      const d = new Date(year, month - 1, -i);
+      days.push({ date: d, isCurrentMonth: false });
+    }
+
+    // Current month days
+    for (let i = 1; i <= lastDay.getDate(); i++) {
+      days.push({ date: new Date(year, month - 1, i), isCurrentMonth: true });
+    }
+
+    // Next month days to fill grid (always 6 rows × 7 cols = 42 cells)
+    let nextDay = 1;
+    while (days.length < 42) {
+      days.push({ date: new Date(year, month, nextDay++), isCurrentMonth: false });
+    }
+
+    return days;
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -184,7 +225,7 @@ export default function Calendar() {
         </div>
         <div className="flex gap-2">
           {/* View Mode Toggle */}
-          <div className="bg-surface border border-gray-200 rounded-lg p-1 flex">
+          <div className="bg-white border border-gray-200 rounded-lg p-1 flex">
             <button
               onClick={() => setViewMode('day')}
               className={`px-3 py-1 rounded ${viewMode === 'day' ? 'bg-primary text-white' : 'hover:bg-gray-100'}`}
@@ -214,7 +255,7 @@ export default function Calendar() {
       </div>
 
       {/* Date Navigation */}
-      <div className="bg-surface rounded-lg shadow-sm border border-gray-200 p-4">
+      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
         <div className="flex items-center justify-between">
           <button
             onClick={() => navigateDate(-1)}
@@ -236,7 +277,7 @@ export default function Calendar() {
 
       {/* Day View - Time Slots */}
       {viewMode === 'day' && (
-        <div className="bg-surface rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
           <div className="divide-y divide-gray-200">
             {timeSlots.map((time) => {
               const apt = getAppointmentForSlot(time);
@@ -300,17 +341,18 @@ export default function Calendar() {
 
       {/* Week View - Simple Grid */}
       {viewMode === 'week' && (
-        <div className="bg-surface rounded-lg shadow-sm border border-gray-200 overflow-auto">
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-auto">
           <div className="min-w-[800px]">
             <div className="grid grid-cols-8 border-b border-gray-200 bg-gray-50">
               <div className="p-2 border-r border-gray-200 w-20">Zeit</div>
               {Array.from({ length: 7 }, (_, i) => {
-                const d = new Date(selectedDate);
-                d.setDate(d.getDate() + i);
+                const weekStart = getWeekStart(new Date(selectedDate + 'T00:00:00'));
+                weekStart.setDate(weekStart.getDate() + i);
+                const isToday = weekStart.toISOString().slice(0, 10) === new Date().toISOString().slice(0, 10);
                 return (
-                  <div key={i} className="p-2 border-r border-gray-200 text-center">
-                    <div className="font-medium">{d.toLocaleDateString('de-AT', { weekday: 'short' })}</div>
-                    <div className="text-sm text-text-secondary">{d.toLocaleDateString('de-AT', { day: '2-digit', month: '2-digit' })}</div>
+                  <div key={i} className={`p-2 border-r border-gray-200 text-center ${isToday ? 'bg-blue-100' : ''}`}>
+                    <div className="font-medium">{weekStart.toLocaleDateString('de-AT', { weekday: 'short' })}</div>
+                    <div className={`text-sm ${isToday ? 'text-primary font-bold' : 'text-text-secondary'}`}>{weekStart.toLocaleDateString('de-AT', { day: '2-digit', month: '2-digit' })}</div>
                   </div>
                 );
               })}
@@ -321,19 +363,21 @@ export default function Calendar() {
                   {time}
                 </div>
                 {Array.from({ length: 7 }, (_, i) => {
-                  const d = new Date(selectedDate);
-                  d.setDate(d.getDate() + i);
-                  const dateStr = d.toISOString().slice(0, 10);
-                  const apt = appointments.find(a => a.date === dateStr && a.time_start === time);
+                  const weekStart = getWeekStart(new Date(selectedDate + 'T00:00:00'));
+                  weekStart.setDate(weekStart.getDate() + i);
+                  const dateStr = weekStart.toISOString().slice(0, 10);
+                  // Match appointments that span this time slot on this day (not just start at slot time)
+                  const aptOnDay = appointments.find(apt => apt.date === dateStr && time >= apt.time_start && time < apt.time_end);
                   return (
                     <div key={i} className="p-1 border-r border-gray-200 min-h-[40px]">
-                      {apt ? (
-                        <div 
+                      {aptOnDay ? (
+                        <div
                           className="bg-blue-50 border-l-2 border-primary p-1 rounded text-xs cursor-pointer hover:bg-blue-100"
-                          onClick={() => openModal(apt)}
+                          onClick={() => openModal(aptOnDay)}
                         >
-                          <div className="font-medium truncate">{apt.patient_name || 'Patient'}</div>
-                          <div className="text-text-secondary">{apt.time_start}-{apt.time_end}</div>
+                          <div className="font-medium truncate">{aptOnDay.patient_name || 'Patient'}</div>
+                          <div className="text-text-secondary truncate">{aptOnDay.treatment_type}</div>
+                          <div className="text-xs text-primary">{aptOnDay.time_start}-{aptOnDay.time_end}</div>
                         </div>
                       ) : (
                         <button
@@ -352,63 +396,68 @@ export default function Calendar() {
         </div>
       )}
 
-      {/* Month View - Simple Calendar Grid */}
-      {viewMode === 'month' && (
-        <div className="bg-surface rounded-lg shadow-sm border border-gray-200 overflow-auto">
-          <div className="min-w-[1000px]">
-            <div className="grid grid-cols-7 border-b border-gray-200 bg-gray-50">
-              {['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'].map(day => (
-                <div key={day} className="p-2 border-r border-gray-200 font-medium text-center">{day}</div>
-              ))}
-            </div>
-            <div className="grid grid-cols-7">
-              {Array.from({ length: 35 }, (_, i) => {
-                const d = new Date(selectedDate);
-                d.setDate(1);
-                d.setDate(d.getDate() + i - d.getDay() + 1);
-                const dateStr = d.toISOString().slice(0, 10);
-                const dayApts = appointments.filter(a => a.date === dateStr);
-                const isToday = dateStr === new Date().toISOString().slice(0, 10);
-                return (
-                  <div 
-                    key={i} 
-                    className={`border-r border-b border-gray-200 p-1 min-h-[100px] ${isToday ? 'bg-blue-50' : ''}`}
-                  >
-                    <div className={`text-right ${isToday ? 'font-bold text-primary' : 'text-text-secondary'}`}>
-                      {d.getDate()}
+      {/* Month View - Calendar Grid with proper week alignment */}
+      {viewMode === 'month' && (() => {
+        const yearMonth = selectedDate.slice(0, 7);
+        const calendarDays = getMonthCalendarDays(yearMonth);
+        const todayStr = new Date().toISOString().slice(0, 10);
+        return (
+          <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-auto">
+            <div className="min-w-[1000px]">
+              <div className="grid grid-cols-7 border-b border-gray-200 bg-gray-50">
+                {['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'].map(day => (
+                  <div key={day} className="p-2 border-r border-gray-200 font-medium text-center">{day}</div>
+                ))}
+              </div>
+              <div className="grid grid-cols-7">
+                {calendarDays.map(({ date, isCurrentMonth }, i) => {
+                  const dateStr = date.toISOString().slice(0, 10);
+                  const dayApts = appointments.filter(a => a.date === dateStr);
+                  const isToday = dateStr === todayStr;
+                  return (
+                    <div
+                      key={i}
+                      className={`border-r border-b border-gray-200 p-1 min-h-[100px] ${!isCurrentMonth ? 'bg-gray-100' : ''}`}
+                    >
+                      <div className={`text-right text-sm mb-1 ${isToday ? 'font-bold text-primary bg-blue-200 rounded-full w-6 h-6 flex items-center justify-center ml-auto' : isCurrentMonth ? 'text-text-primary' : 'text-gray-400'}`}>
+                        {date.getDate()}
+                      </div>
+                      <div className="space-y-1">
+                        {dayApts.slice(0, 3).map(apt => (
+                          <div
+                            key={apt.id}
+                            className={`border-l-2 px-1 py-0.5 rounded text-xs cursor-pointer hover:opacity-80 truncate ${isCurrentMonth ? 'bg-blue-100 border-primary' : 'bg-gray-200 border-gray-400'}`}
+                            onClick={() => openModal(apt)}
+                            title={`${apt.time_start}-${apt.time_end} | ${apt.patient_name} | ${apt.treatment_type}`}
+                          >
+                            <span className="font-medium">{apt.time_start}</span>{' '}
+                            <span className="truncate">{apt.patient_name?.split(' ')[1] || apt.patient_name}</span>
+                            <span className="block text-[10px] text-text-secondary truncate">{apt.treatment_type}</span>
+                          </div>
+                        ))}
+                        {dayApts.length > 3 && (
+                          <div className="text-xs text-text-secondary text-center">+{dayApts.length - 3} mehr</div>
+                        )}
+                      </div>
                     </div>
-                    <div className="space-y-1 mt-1">
-                      {dayApts.slice(0, 3).map(apt => (
-                        <div 
-                          key={apt.id}
-                          className="bg-blue-100 border-l-2 border-primary px-1 py-0.5 rounded text-xs cursor-pointer hover:bg-blue-200 truncate"
-                          onClick={() => openModal(apt)}
-                        >
-                          {apt.time_start} {(apt.patient_name || 'Patient').split(' ')[1]}
-                        </div>
-                      ))}
-                      {dayApts.length > 3 && (
-                        <div className="text-xs text-text-secondary text-center">+{dayApts.length - 3} mehr</div>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
+                  );
+                })}
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* New/Edit Appointment Modal */}
       {showModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-surface rounded-lg shadow-xl max-w-md w-full max-h-[90vh] overflow-y-auto">
-            <div className="px-6 py-4 border-b border-gray-200 sticky top-0 bg-surface">
+          <div className="bg-white rounded-lg shadow-xl max-w-md w-full max-h-[90vh] flex flex-col">
+            <div className="px-6 py-4 border-b border-gray-200 flex-shrink-0">
               <h3 className="text-lg font-semibold text-text-primary">
                 {editingAppointment ? 'Termin bearbeiten' : 'Neuer Termin'}
               </h3>
             </div>
-            <form onSubmit={handleSubmit} className="p-6 space-y-4">
+            <form id="appointment-form" onSubmit={handleSubmit} className="p-6 space-y-4 overflow-y-auto flex-1">
               <div>
                 <label className="block text-sm font-medium text-text-primary mb-1">Patient *</label>
                 <select
@@ -497,23 +546,23 @@ export default function Calendar() {
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary"
                 />
               </div>
-              
-              <div className="flex gap-3 pt-4 sticky bottom-0 bg-surface border-t border-gray-200 mt-4">
-                <button
-                  type="button"
-                  onClick={() => setShowModal(false)}
-                  className="flex-1 px-4 py-2 border border-gray-300 rounded-lg font-medium hover:bg-gray-50"
-                >
-                  Abbrechen
-                </button>
-                <button
-                  type="submit"
-                  className="flex-1 px-4 py-2 bg-primary text-white rounded-lg font-medium hover:bg-blue-700"
-                >
-                  Speichern
-                </button>
-              </div>
             </form>
+            <div className="px-6 py-4 border-t border-gray-200 flex-shrink-0 flex gap-3">
+              <button
+                type="button"
+                onClick={() => setShowModal(false)}
+                className="flex-1 px-4 py-2 border border-gray-300 rounded-lg font-medium hover:bg-gray-50"
+              >
+                Abbrechen
+              </button>
+              <button
+                type="submit"
+                form="appointment-form"
+                className="flex-1 px-4 py-2 bg-primary text-white rounded-lg font-medium hover:bg-blue-700"
+              >
+                {editingAppointment ? 'Speichern' : 'Erstellen'}
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -521,8 +570,8 @@ export default function Calendar() {
       {/* Treatment Modal - Like Synaptos "Behandlung durchführen" */}
       {showTreatmentModal && editingAppointment && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-surface rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-            <div className="px-6 py-4 border-b border-gray-200 sticky top-0 bg-surface">
+          <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] flex flex-col">
+            <div className="px-6 py-4 border-b border-gray-200 flex-shrink-0">
               <h3 className="text-lg font-semibold text-text-primary">
                 Behandlung: {editingAppointment.patient_name}
               </h3>
@@ -530,7 +579,7 @@ export default function Calendar() {
                 {editingAppointment.date} | {editingAppointment.time_start} - {editingAppointment.time_end} | {editingAppointment.treatment_type}
               </p>
             </div>
-            <div className="p-6 space-y-6">
+            <div className="p-6 space-y-6 overflow-y-auto flex-1">
               {/* Tabs */}
               <div className="border-b border-gray-200">
                 <nav className="flex gap-4">
@@ -589,7 +638,7 @@ export default function Calendar() {
                 </div>
               </div>
             </div>
-            <div className="px-6 py-4 border-t border-gray-200 sticky bottom-0 bg-surface flex gap-3">
+            <div className="px-6 py-4 border-t border-gray-200 flex-shrink-0 flex gap-3">
               <button
                 onClick={() => setShowTreatmentModal(false)}
                 className="flex-1 px-4 py-2 border border-gray-300 rounded-lg font-medium hover:bg-gray-50"

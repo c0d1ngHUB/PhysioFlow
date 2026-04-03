@@ -7,6 +7,10 @@ export default function Patients() {
   const [searchTerm, setSearchTerm] = useState('');
   const [showModal, setShowModal] = useState(false);
   const [editingPatient, setEditingPatient] = useState<Patient | null>(null);
+  const [showHistory, setShowHistory] = useState(false);
+  const [historyPatient, setHistoryPatient] = useState<Patient | null>(null);
+  const [historyData, setHistoryData] = useState<{ appointments: any[]; invoices: any[] }>({ appointments: [], invoices: [] });
+  const [historyLoading, setHistoryLoading] = useState(false);
 
   // Form state
   const [formData, setFormData] = useState({
@@ -63,6 +67,23 @@ export default function Patients() {
       setFormData({ first_name: '', last_name: '', phone: '', email: '', birthdate: '', notes: '', insurance_number: '', address: '' });
     }
     setShowModal(true);
+  };
+
+  const openHistory = async (patient: Patient) => {
+    setHistoryPatient(patient);
+    setShowHistory(true);
+    setHistoryLoading(true);
+    try {
+      const res = await fetch(`/api/patients/${patient.id}/history`);
+      const data = await res.json();
+      if (data.success) {
+        setHistoryData({ appointments: data.data.appointments, invoices: data.data.invoices });
+      }
+    } catch (error) {
+      console.error('Failed to fetch history:', error);
+    } finally {
+      setHistoryLoading(false);
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -198,6 +219,12 @@ export default function Patients() {
             
             {/* Actions */}
             <div className="flex gap-2 mt-4 pt-4 border-t border-gray-100">
+              <button
+                onClick={(e) => { e.stopPropagation(); openHistory(patient); }}
+                className="flex-1 px-3 py-2 bg-blue-50 text-blue-600 rounded-lg text-sm font-medium hover:bg-blue-100 transition-colors"
+              >
+                Historie
+              </button>
               <button
                 onClick={(e) => { e.stopPropagation(); openModal(patient); }}
                 className="flex-1 px-3 py-2 bg-blue-50 text-blue-600 rounded-lg text-sm font-medium hover:bg-blue-100 transition-colors"
@@ -360,6 +387,185 @@ export default function Patients() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Patient History Modal */}
+      {showHistory && historyPatient && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-xl max-w-3xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="px-6 py-4 border-b border-gray-200 sticky top-0 bg-white z-10">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900">
+                    Patientenhistorie
+                  </h3>
+                  <p className="text-sm text-gray-500">
+                    {historyPatient.first_name} {historyPatient.last_name}
+                  </p>
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => { setShowHistory(false); openModal(historyPatient); }}
+                    className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors"
+                  >
+                    Neuer Termin
+                  </button>
+                  <button
+                    onClick={() => setShowHistory(false)}
+                    className="px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium hover:bg-gray-50 transition-colors"
+                  >
+                    ×
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {historyLoading ? (
+              <div className="flex items-center justify-center h-48">
+                <div className="w-8 h-8 border-2 border-blue-200 border-t-blue-600 rounded-full animate-spin"></div>
+              </div>
+            ) : (
+              <div className="p-6 space-y-6">
+                {/* Patient Info Card */}
+                <div className="bg-blue-50 rounded-xl p-5 border border-blue-200">
+                  <h4 className="text-sm font-semibold text-blue-700 mb-3 uppercase tracking-wide">Patientenstamm</h4>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+                    {historyPatient.phone && (
+                      <div>
+                        <p className="text-xs text-gray-500 mb-0.5">Telefon</p>
+                        <p className="text-sm font-medium text-gray-900">{historyPatient.phone}</p>
+                      </div>
+                    )}
+                    {historyPatient.email && (
+                      <div>
+                        <p className="text-xs text-gray-500 mb-0.5">E-Mail</p>
+                        <p className="text-sm font-medium text-gray-900">{historyPatient.email}</p>
+                      </div>
+                    )}
+                    {historyPatient.birthdate && (
+                      <div>
+                        <p className="text-xs text-gray-500 mb-0.5">Geburtsdatum</p>
+                        <p className="text-sm font-medium text-gray-900">
+                          {new Date(historyPatient.birthdate).toLocaleDateString('de-AT')}
+                        </p>
+                      </div>
+                    )}
+                    {historyPatient.address && (
+                      <div>
+                        <p className="text-xs text-gray-500 mb-0.5">Adresse</p>
+                        <p className="text-sm font-medium text-gray-900">{historyPatient.address}</p>
+                      </div>
+                    )}
+                    {historyPatient.insurance_number && (
+                      <div>
+                        <p className="text-xs text-gray-500 mb-0.5">Versicherungsnummer</p>
+                        <p className="text-sm font-medium text-gray-900">{historyPatient.insurance_number}</p>
+                      </div>
+                    )}
+                  </div>
+                  {historyPatient.notes && (
+                    <div className="mt-3 pt-3 border-t border-blue-200">
+                      <p className="text-xs text-gray-500 mb-0.5">Notizen</p>
+                      <p className="text-sm text-gray-700">{historyPatient.notes}</p>
+                    </div>
+                  )}
+                </div>
+
+                {/* Appointment History */}
+                <div>
+                  <div className="flex items-center justify-between mb-3">
+                    <h4 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">
+                      Termine ({historyData.appointments.length})
+                    </h4>
+                  </div>
+                  {historyData.appointments.length > 0 ? (
+                    <div className="border border-gray-200 rounded-xl overflow-hidden">
+                      <table className="w-full text-sm">
+                        <thead className="bg-gray-50 border-b border-gray-200">
+                          <tr>
+                            <th className="text-left px-4 py-3 font-semibold text-gray-600">Datum</th>
+                            <th className="text-left px-4 py-3 font-semibold text-gray-600">Zeit</th>
+                            <th className="text-left px-4 py-3 font-semibold text-gray-600">Behandlung</th>
+                            <th className="text-left px-4 py-3 font-semibold text-gray-600">Notizen</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-100">
+                          {historyData.appointments.map((apt: any) => (
+                            <tr key={apt.id} className="hover:bg-blue-50/50 transition-colors">
+                              <td className="px-4 py-3 text-gray-900">
+                                {new Date(apt.date + 'T00:00:00').toLocaleDateString('de-AT')}
+                              </td>
+                              <td className="px-4 py-3 text-gray-700 font-mono text-xs">
+                                {apt.time_start} – {apt.time_end}
+                              </td>
+                              <td className="px-4 py-3 text-gray-900">{apt.treatment_type}</td>
+                              <td className="px-4 py-3 text-gray-500 text-xs">{apt.notes || '—'}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : (
+                    <div className="text-center py-8 bg-gray-50 rounded-xl border border-gray-200">
+                      <span className="text-3xl text-gray-300">📅</span>
+                      <p className="text-gray-500 text-sm mt-2">Noch keine Termine</p>
+                    </div>
+                  )}
+                </div>
+
+                {/* Invoice History */}
+                <div>
+                  <div className="flex items-center justify-between mb-3">
+                    <h4 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">
+                      Honorarnoten ({historyData.invoices.length})
+                    </h4>
+                  </div>
+                  {historyData.invoices.length > 0 ? (
+                    <div className="border border-gray-200 rounded-xl overflow-hidden">
+                      <table className="w-full text-sm">
+                        <thead className="bg-gray-50 border-b border-gray-200">
+                          <tr>
+                            <th className="text-left px-4 py-3 font-semibold text-gray-600">Rechnungsnr.</th>
+                            <th className="text-left px-4 py-3 font-semibold text-gray-600">Datum</th>
+                            <th className="text-right px-4 py-3 font-semibold text-gray-600">Betrag</th>
+                            <th className="text-center px-4 py-3 font-semibold text-gray-600">Status</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-100">
+                          {historyData.invoices.map((inv: any) => (
+                            <tr key={inv.id} className="hover:bg-blue-50/50 transition-colors">
+                              <td className="px-4 py-3 text-gray-900 font-mono text-xs">{inv.invoice_number}</td>
+                              <td className="px-4 py-3 text-gray-700">
+                                {new Date(inv.created_at).toLocaleDateString('de-AT')}
+                              </td>
+                              <td className="px-4 py-3 text-gray-900 text-right font-semibold">
+                                {new Intl.NumberFormat('de-AT', { style: 'currency', currency: 'EUR' }).format(inv.total)}
+                              </td>
+                              <td className="px-4 py-3 text-center">
+                                <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                                  inv.paid
+                                    ? 'bg-emerald-100 text-emerald-700'
+                                    : 'bg-amber-100 text-amber-700'
+                                }`}>
+                                  {inv.paid ? '✓ Bezahlt' : '⏳ Offen'}
+                                </span>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : (
+                    <div className="text-center py-8 bg-gray-50 rounded-xl border border-gray-200">
+                      <span className="text-3xl text-gray-300">🧾</span>
+                      <p className="text-gray-500 text-sm mt-2">Noch keine Honorarnoten</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}

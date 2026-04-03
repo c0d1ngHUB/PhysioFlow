@@ -39,7 +39,7 @@ function App() {
                 onClick={() => setCurrentPage(item.id)}
                 className={`w-full flex items-center px-4 py-3 rounded-lg font-medium transition-colors ${
                   currentPage === item.id
-                    ? 'bg-primary text-white'
+                    ? 'bg-primary-100 text-blue-900 font-bold border-l-4 border-primary-600'
                     : 'text-text-secondary hover:bg-gray-100'
                 }`}
               >
@@ -65,7 +65,7 @@ function App() {
         {/* Footer */}
         <div className="p-4 border-t border-gray-200">
           <p className="text-xs text-text-secondary text-center">
-            v1.0 • Praxis-Software
+            v1.1 • Praxis-Software
           </p>
         </div>
       </aside>
@@ -96,8 +96,8 @@ function App() {
                   setCurrentPage(item.id);
                   setSidebarOpen(false);
                 }}
-                className={`block w-full text-left px-3 py-2 rounded ${
-                  currentPage === item.id ? 'bg-primary text-white' : 'hover:bg-gray-100'
+                className={`block w-full text-left px-3 py-2 rounded font-medium ${
+                  currentPage === item.id ? 'bg-primary-100 text-blue-900 font-bold' : 'text-text-secondary hover:bg-gray-100'
                 }`}
               >
                 {item.icon} {item.label}

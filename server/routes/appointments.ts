@@ -3,10 +3,10 @@ import db from '../db/index.js';
 
 const router = Router();
 
-// Get all appointments (with optional date filter)
+// Get all appointments (with optional date/week/month filter)
 router.get('/', (req, res) => {
-  const { date, patient_id } = req.query;
-  
+  const { date, patient_id, view } = req.query;
+
   let query = `
     SELECT a.*, p.first_name || ' ' || p.last_name as patient_name, p.phone as patient_phone
     FROM appointments a
@@ -14,12 +14,37 @@ router.get('/', (req, res) => {
     WHERE 1=1
   `;
   const params: any[] = [];
-  
-  if (date) {
+
+  if (date && !view) {
+    // Legacy: single date filter (backward compat)
+    query += ' AND a.date = ?';
+    params.push(date);
+  } else if (date && view === 'week') {
+    // Week view: get Monday-Sunday of the week containing `date`
+    const d = new Date(String(date));
+    const day = d.getDay();
+    const diff = day === 0 ? -6 : 1 - day;
+    const monday = new Date(d);
+    monday.setDate(d.getDate() + diff);
+    const sunday = new Date(monday);
+    sunday.setDate(monday.getDate() + 6);
+    const fmt = (dt: Date) => dt.toISOString().slice(0, 10);
+    query += ' AND a.date >= ? AND a.date <= ?';
+    params.push(fmt(monday), fmt(sunday));
+  } else if (date && view === 'month') {
+    // Month view: get all days of the month containing `date`
+    const [year, month] = String(date).split('-').map(Number);
+    const start = `${String(year)}-${String(month).padStart(2, '0')}-01`;
+    const lastDay = new Date(year, month, 0).getDate();
+    const end = `${String(year)}-${String(month).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+    query += ' AND a.date >= ? AND a.date <= ?';
+    params.push(start, end);
+  } else if (date) {
+    // Single date filter (backward compat when no view param)
     query += ' AND a.date = ?';
     params.push(date);
   }
-  
+
   if (patient_id) {
     query += ' AND a.patient_id = ?';
     params.push(patient_id);

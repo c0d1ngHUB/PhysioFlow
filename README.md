@@ -1,14 +1,29 @@
 # PhysioFlow 🩺
 
+> **Status:** MVP Fertig ✅  
+> **Erstellt:** 2026-03-23  
+> **Letzte Änderung:** 2026-03-23
+
 Terminmanagement für Physiotherapeuten mit SMS-Reminder und österreichkonformen Honorarnoten.
 
 ## Features
 
-- ✅ **Terminkalender** - Tages-/Wochenansicht mit Drag & Drop
+- ✅ **Terminkalender** - Tages-/Wochen-/Monatsansicht mit Drag & Drop
 - ✅ **Patientenverwaltung** - Stammdaten mit Suchfunktion
 - ✅ **SMS-Reminder** - Personalisierte Erinnerungen 24h vor Termin
 - ✅ **Honorarnoten-Rechner** - Österreichkonform mit QR-Code für Registrierkasse
 - ✅ **Dashboard** - Übersicht über Termine und offene Rechnungen
+- ✅ **PDF-Export** - Honorarnoten als druckfähiges PDF
+
+| Feature | Status |
+|---------|--------|
+| Terminkalender (Tag/Woche/Monat) | ✅ |
+| Patientenverwaltung (CRUD) | ✅ |
+| SMS-Reminder-System | ✅ (simuliert) |
+| Honorarnoten mit QR-Code | ✅ |
+| PDF-Export | ✅ |
+| Dashboard mit Statistiken | ✅ |
+| Österreichische Steuerbefreiung (§6 UStG) | ✅ |
 
 ## Tech Stack
 
@@ -16,6 +31,14 @@ Terminmanagement für Physiotherapeuten mit SMS-Reminder und österreichkonforme
 - **Backend**: Node.js + Express + TypeScript
 - **Datenbank**: SQLite (better-sqlite3)
 - **PDF-Generation**: PDFKit + QRCode
+
+## Live Deployment
+
+| Resource | URL |
+|----------|-----|
+| **Live URL** | https://physio-flow.online (LAN + WAN) |
+| **Refresh/Rebuild** | `/home/m3kky/refresh_physioflow.sh` |
+| **Dev Server** | http://localhost:5173 (tests before build) |
 
 ## Quick Start
 
@@ -63,13 +86,19 @@ Für echte SMS-Benachrichtigungen:
 
 **Ohne API-Key** werden SMS nur simuliert (Logs in der Konsole).
 
+## Demo-Daten
+
+- **5 Patienten:** Maria Schmidt, Max Müller, Anna Weber, Thomas Gruber, Lisa Huber
+- **7 Termine:** Heute, morgen, übermorgen
+- **4 Honorarnoten:** 2 bezahlt, 2 offen (€940 ausstehend)
+
 ## Projekt-Struktur
 
 ```
 PhysioFlow/
 ├── src/                    # React Frontend
 │   ├── components/        # UI Komponenten
-│   ├── pages/             # Seiten (Dashboard, Calendar, etc.)
+│   ├── pages/             # Seiten (Dashboard, Calendar, Patients, Invoices)
 │   ├── types/            # TypeScript Interfaces
 │   └── lib/              # Utilities
 ├── server/                # Express Backend
@@ -89,6 +118,24 @@ PhysioFlow/
 4. `npm start` starten
 
 Keine weitere Konfiguration nötig – SQLite ist portabel! 🐳
+
+## Nächste Schritte (Phase 2)
+
+- [ ] Ausgabenverwaltung
+- [ ] Mahnwesen
+- [ ] Gutscheine
+- [ ] Kalender-Sync (iCal)
+- [ ] Gruppenkalender (Multi-Therapeuten)
+- [ ] Online-Terminbuchung
+
+## Dokumentation
+
+| Dokument | Pfad |
+|----------|------|
+| README | Dieses Dokument |
+| Spezifikation | `SPEC.md` |
+| Lastenheft | `LASTENHEFT.md` / `.pdf` |
+| Technisch | Im Projekt-Ordner |
 
 ## Lizenz
 

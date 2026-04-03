@@ -106,6 +106,16 @@ Medizinisch-professionell mit skandinavischer Wärme. Wenig ablenkende Elemente,
 - SMS-Versand-Status des Tages
 - Schnellaktion: Neuer Termin, Neue Notiz
 
+### 4.6 Ausgabenverwaltung
+- **Erstellen**: Kategorie, Betrag, Datum, optional Beschreibung
+- **Kategorien**: Miete, Strom, Heizung, Versicherung, Reinigung, Fortbildung, Material, Bürobedarf, Telefon/Internet, Steuern, Abgaben, Sonstiges
+- **Filter**: Nach Kategorie filterbar
+- **Statistiken**: Gesamt (alle Zeit), Dieser Monat, Anzahl Einträge
+- **Bearbeiten/Löschen**: Direkt in der Tabelle
+- **Beleg-Foto**: Optional (🟡 low priority)
+- **Wiederkehrende Ausgaben**: ❌ (low priority)
+- **Export für Steuerberater**: ❌ (low priority)
+
 ## 5. Component Inventory
 
 ### Button
@@ -179,7 +189,8 @@ physioflow/
 │   │   ├── Dashboard.tsx
 │   │   ├── Calendar.tsx
 │   │   ├── Patients.tsx
-│   │   └── Invoices.tsx
+│   │   ├── Invoices.tsx
+│   │   └── Expenses.tsx
 │   ├── hooks/            # Custom Hooks
 │   ├── store/            # Zustand Store
 │   ├── lib/              # Utilities, API-Client
@@ -193,6 +204,7 @@ physioflow/
 │   │   ├── patients.ts
 │   │   ├── appointments.ts
 │   │   ├── invoices.ts
+│   │   ├── expenses.ts
 │   │   └── sms.ts
 │   ├── db/
 │   │   └── schema.sql    # SQLite Schema
@@ -244,6 +256,17 @@ physioflow/
 | created_at | TEXT | Timestamp |
 | paid | INTEGER | 0=offen, 1=bezahlt |
 
+**expenses**
+| Column | Type | Description |
+|--------|------|-------------|
+| id | INTEGER PK | Auto-Increment |
+| category | TEXT | Kategorie (Miete, Strom, ...) |
+| description | TEXT | Optionale Beschreibung |
+| amount | REAL | Betrag in € |
+| date | TEXT | Datum (YYYY-MM-DD) |
+| receipt_path | TEXT | Pfad zum Beleg-Foto (optional) |
+| created_at | TEXT | Timestamp |
+
 ### API Endpoints
 
 **Patients**
@@ -268,7 +291,14 @@ physioflow/
 - `POST /api/sms/send` – SMS senden
 - `POST /api/sms/schedule` – Erinnerung planen
 
-## 7. Deinstallation & Umzug
+**Expenses (Ausgaben)**
+- `GET /api/expenses` – Alle Ausgaben (Filter: category, from, to, limit)
+- `POST /api/expenses` – Neue Ausgabe
+- `PUT /api/expenses/:id` – Ausgabe aktualisieren
+- `DELETE /api/expenses/:id` – Ausgabe löschen
+- `GET /api/expenses/categories` – Alle Kategorien
+
+## 8. Deinstallation & Umzug
 
 Das Projekt ist vollständig lokal in `/data/physioflow.db` gespeichert. 
 
