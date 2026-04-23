@@ -76,3 +76,22 @@ CREATE TABLE IF NOT EXISTS expenses (
 -- Index for expenses
 CREATE INDEX IF NOT EXISTS idx_expenses_date ON expenses(date);
 CREATE INDEX IF NOT EXISTS idx_expenses_category ON expenses(category);
+
+-- Users table
+CREATE TABLE IF NOT EXISTS users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    username TEXT NOT NULL UNIQUE,
+    password_hash TEXT NOT NULL,
+    role TEXT NOT NULL CHECK(role IN ('admin', 'therapist')),
+    created_at TEXT DEFAULT (datetime('now'))
+);
+
+-- Audit log table
+CREATE TABLE IF NOT EXISTS audit_logs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    timestamp TEXT DEFAULT (datetime('now')),
+    action TEXT NOT NULL,
+    username TEXT,
+    ip TEXT,
+    success INTEGER NOT NULL
+);

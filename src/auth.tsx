@@ -1,10 +1,16 @@
 import { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import type { ReactNode } from 'react';
 
+export interface AuthUser {
+  username: string;
+  role: string;
+}
+
 export interface AuthContextType {
   authenticated: boolean;
   loading: boolean;
-  login: (password: string) => Promise<boolean>;
+  user: AuthUser | null;
+  login: (username: string, password: string) => Promise<boolean>;
   logout: () => Promise<void>;
   checkAuth: () => Promise<void>;
 }
@@ -12,6 +18,7 @@ export interface AuthContextType {
 export const AuthContext = createContext<AuthContextType>({
   authenticated: false,
   loading: true,
+  user: null,
   login: async () => false,
   logout: async () => {},
   checkAuth: async () => {},
@@ -40,6 +47,7 @@ window.fetch = async function (...args: Parameters<typeof originalFetch>) {
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [authenticated, setAuthenticated] = useState(false);
+  const [user, setUser] = useState<AuthUser | null>(null);
   const [loading, setLoading] = useState(true);
 
   const checkAuth = useCallback(async () => {
@@ -47,6 +55,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const res = await originalFetch('/api/auth/check', { credentials: 'same-origin' });
       const data = await res.json();
       setAuthenticated(data.authenticated === true);
+      setUser(data.user || null);
     } catch {
       setAuthenticated(false);
     } finally {
@@ -54,16 +63,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  const login = useCallback(async (password: string): Promise<boolean> => {
+  const login = useCallback(async (username: string, password: string): Promise<boolean> => {
     try {
       const res = await originalFetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'same-origin',
-        body: JSON.stringify({ password }),
+        body: JSON.stringify({ username, password }),
       });
       if (res.ok) {
+        const data = await res.json();
         setAuthenticated(true);
+        setUser(data.user || null);
         return true;
       }
       return false;
@@ -80,17 +91,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       });
     } finally {
       setAuthenticated(false);
+      setUser(null);
     }
   }, []);
 
   useEffect(() => {
-    setOnAuthFailure(() => () => setAuthenticated(false));
+    setOnAuthFailure(() => () => { setAuthenticated(false); setUser(null); });
     checkAuth();
     return () => setOnAuthFailure(null);
   }, [checkAuth]);
 
   return (
-    <AuthContext.Provider value={{ authenticated, loading, login, logout, checkAuth }}>
+    <AuthContext.Provider value={{ authenticated, loading, user, login, logout, checkAuth }}>
       {children}
     </AuthContext.Provider>
   );

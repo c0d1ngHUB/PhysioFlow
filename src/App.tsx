@@ -13,6 +13,7 @@ import { ToastContainer } from './components/ui';
 // =============================================================================
 function LoginPage() {
   const { login } = useAuth();
+  const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -21,9 +22,9 @@ function LoginPage() {
     e.preventDefault();
     setSubmitting(true);
     setError('');
-    const ok = await login(password);
+    const ok = await login(username, password);
     if (!ok) {
-      setError('Falsches Passwort');
+      setError('Ungültige Anmeldedaten');
     }
     setSubmitting(false);
   };
@@ -36,13 +37,21 @@ function LoginPage() {
           <h1 className="text-xl font-bold text-primary">PhysioFlow</h1>
         </div>
         <form onSubmit={handleSubmit}>
+          <label className="block text-sm font-medium text-text-secondary mb-1">Benutzername</label>
+          <input
+            type="text"
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 mb-3"
+            autoFocus
+            disabled={submitting}
+          />
           <label className="block text-sm font-medium text-text-secondary mb-1">Passwort</label>
           <input
             type="password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 mb-3"
-            autoFocus
             disabled={submitting}
           />
           {error && <p className="text-red-600 text-sm mb-3">{error}</p>}

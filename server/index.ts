@@ -1,10 +1,13 @@
 import express from 'express';
 import session from 'express-session';
-import crypto from 'crypto';
+import bcrypt from 'bcrypt';
+import rateLimit from 'express-rate-limit';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
+
+import db from './db/index.js';
 
 import patientsRouter from './routes/patients.js';
 import appointmentsRouter from './routes/appointments.js';
@@ -101,24 +104,82 @@ app.use('/api', (req: express.Request, res: express.Response, next: express.Next
 // ---------------------------------------------------------------------------
 // Auth routes
 // ---------------------------------------------------------------------------
-app.post('/api/auth/login', express.json(), (req: express.Request, res: express.Response) => {
-  const { password } = req.body || {};
-  const envPassword = process.env.PHYSIOFLOW_PASSWORD;
-  if (!password || !envPassword) {
+// Login rate limiter: 5 attempts per minute per IP
+const loginLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 5,
+  message: { success: false, error: 'Too many login attempts. Try again in a minute.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+app.post('/api/auth/login', express.json(), loginLimiter, async (req: express.Request, res: express.Response) => {
+  const { username, password } = req.body || {};
+  const ip = req.ip || req.socket.remoteAddress || 'unknown';
+
+  const logAudit = (action: string, success: boolean) => {
+    try {
+      db.prepare('INSERT INTO audit_logs (action, username, ip, success) VALUES (?, ?, ?, ?)')
+        .run(action, username || '', ip, success ? 1 : 0);
+    } catch (e) { /* audit logging must not break login */ }
+  };
+
+  // Legacy fallback: if no username provided and PHYSIOFLOW_PASSWORD is set, allow plain-password login
+  if (!username && password) {
+    const envPassword = process.env.PHYSIOFLOW_PASSWORD;
+    if (envPassword) {
+      // Check if it looks like a bcrypt hash — if so, compare; otherwise plain text for migration
+      const isLegacyPlain = !envPassword.startsWith('$2');
+      let legacyMatch = false;
+      if (isLegacyPlain) {
+        legacyMatch = password === envPassword;
+      } else {
+        legacyMatch = await bcrypt.compare(password, envPassword);
+      }
+      if (legacyMatch) {
+        logAudit('login-legacy', true);
+        req.session.isAuthenticated = true;
+        req.session.user = { username: 'admin', role: 'admin' };
+        req.session.save(() => {
+          res.json({ success: true, user: { username: 'admin', role: 'admin' } });
+        });
+        return;
+      }
+      logAudit('login-legacy', false);
+      res.status(401).json({ success: false, error: 'Invalid credentials' });
+      return;
+    }
+  }
+
+  // Standard user lookup
+  if (!username || !password) {
+    logAudit('login-missing-fields', false);
     res.status(401).json({ success: false, error: 'Invalid credentials' });
     return;
   }
-  // Timing-safe comparison using SHA-256 hashes
-  const inputHash = crypto.createHash('sha256').update(String(password)).digest();
-  const envHash = crypto.createHash('sha256').update(envPassword).digest();
-  if (inputHash.length === envHash.length && crypto.timingSafeEqual(inputHash, envHash)) {
-    req.session.isAuthenticated = true;
-    req.session.save(() => {
-      res.json({ success: true });
-    });
-  } else {
+
+  const user = db.prepare('SELECT id, username, password_hash, role FROM users WHERE username = ?')
+    .get(username) as { id: number; username: string; password_hash: string; role: string } | undefined;
+
+  if (!user) {
+    logAudit('login-user-not-found', false);
     res.status(401).json({ success: false, error: 'Invalid credentials' });
+    return;
   }
+
+  const match = await bcrypt.compare(password, user.password_hash);
+  if (!match) {
+    logAudit('login-wrong-password', false);
+    res.status(401).json({ success: false, error: 'Invalid credentials' });
+    return;
+  }
+
+  logAudit('login', true);
+  req.session.isAuthenticated = true;
+  req.session.user = { username: user.username, role: user.role };
+  req.session.save(() => {
+    res.json({ success: true, user: { username: user.username, role: user.role } });
+  });
 });
 
 app.post('/api/auth/logout', (req: express.Request, res: express.Response) => {
@@ -128,7 +189,10 @@ app.post('/api/auth/logout', (req: express.Request, res: express.Response) => {
 });
 
 app.get('/api/auth/check', (req: express.Request, res: express.Response) => {
-  res.json({ authenticated: req.session.isAuthenticated === true });
+  res.json({
+    authenticated: req.session.isAuthenticated === true,
+    user: req.session.user || null,
+  });
 });
 
 // ---------------------------------------------------------------------------
