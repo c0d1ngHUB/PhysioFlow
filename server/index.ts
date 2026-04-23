@@ -1,9 +1,10 @@
 import express from 'express';
+import session from 'express-session';
+import crypto from 'crypto';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
-// Auth disabled for dev/internal use — re-enable when hosting for customers
 
 import patientsRouter from './routes/patients.js';
 import appointmentsRouter from './routes/appointments.js';
@@ -13,8 +14,6 @@ import dashboardRouter from './routes/dashboard.js';
 import expensesRouter from './routes/expenses.js';
 
 dotenv.config();
-
-// Production hard-fail disabled (auth removed)
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -55,13 +54,94 @@ app.use(cors({
 // ---------------------------------------------------------------------------
 app.use(express.json());
 
-// Session middleware disabled (auth removed)
+// ---------------------------------------------------------------------------
+// Session middleware
+// ---------------------------------------------------------------------------
+const SESSION_SECRET = process.env.SESSION_SECRET
+  || (process.env.NODE_ENV === 'production'
+    ? undefined
+    : 'dev-secret');
+if (!SESSION_SECRET) {
+  throw new Error('SESSION_SECRET is required in production. Set it in .env');
+}
+app.use(session({
+  secret: SESSION_SECRET,
+  resave: false,
+  saveUninitialized: false,
+  cookie: {
+    httpOnly: true,
+    secure: process.env.SESSION_COOKIE_SECURE === 'true', // Set 'true' when behind HTTPS reverse proxy
+    sameSite: 'lax',
+    maxAge: 24 * 60 * 60 * 1000, // 24 hours
+  },
+}));
 
-// CSRF middleware disabled (auth removed)
+// ---------------------------------------------------------------------------
+// CSRF protection — verify Origin on mutating requests
+// ---------------------------------------------------------------------------
+app.use('/api', (req: express.Request, res: express.Response, next: express.NextFunction) => {
+  if (req.method === 'GET') return next();
+  if (req.path.startsWith('/auth/login')) return next();
+  const origin = req.headers.origin;
+  if (!origin) {
+    if (process.env.NODE_ENV === 'production') {
+      res.status(403).json({ success: false, error: 'Missing Origin header' });
+      return;
+    }
+    // In dev, allow localhost without Origin
+    return next();
+  }
+  if (!ALLOWED_ORIGINS.includes(origin)) {
+    res.status(403).json({ success: false, error: 'Invalid Origin' });
+    return;
+  }
+  next();
+});
 
-// Auth routes disabled (auth removed)
+// ---------------------------------------------------------------------------
+// Auth routes
+// ---------------------------------------------------------------------------
+app.post('/api/auth/login', express.json(), (req: express.Request, res: express.Response) => {
+  const { password } = req.body || {};
+  const envPassword = process.env.PHYSIOFLOW_PASSWORD;
+  if (!password || !envPassword) {
+    res.status(401).json({ success: false, error: 'Invalid credentials' });
+    return;
+  }
+  // Timing-safe comparison using SHA-256 hashes
+  const inputHash = crypto.createHash('sha256').update(String(password)).digest();
+  const envHash = crypto.createHash('sha256').update(envPassword).digest();
+  if (inputHash.length === envHash.length && crypto.timingSafeEqual(inputHash, envHash)) {
+    req.session.isAuthenticated = true;
+    req.session.save(() => {
+      res.json({ success: true });
+    });
+  } else {
+    res.status(401).json({ success: false, error: 'Invalid credentials' });
+  }
+});
 
-// Auth middleware disabled (auth removed)
+app.post('/api/auth/logout', (req: express.Request, res: express.Response) => {
+  req.session.destroy(() => {
+    res.json({ success: true });
+  });
+});
+
+app.get('/api/auth/check', (req: express.Request, res: express.Response) => {
+  res.json({ authenticated: req.session.isAuthenticated === true });
+});
+
+// ---------------------------------------------------------------------------
+// Auth middleware — protect all /api/* except /api/auth/*
+// ---------------------------------------------------------------------------
+app.use('/api', (req: express.Request, res: express.Response, next: express.NextFunction) => {
+  if (req.path.startsWith('/auth/')) return next();
+  if (req.session.isAuthenticated !== true) {
+    res.status(401).json({ success: false, error: 'Authentication required' });
+    return;
+  }
+  next();
+});
 
 // ---------------------------------------------------------------------------
 // API Routes

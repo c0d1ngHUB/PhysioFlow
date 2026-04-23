@@ -4,27 +4,84 @@ import Calendar from './pages/Calendar';
 import Patients from './pages/Patients';
 import Invoices from './pages/Invoices';
 import Expenses from './pages/Expenses';
-// Auth removed for dev/internal use
+import { AuthProvider, useAuth } from './auth.tsx';
 import { useNavigation, type Page } from './navigation';
 import { ToastContainer } from './components/ui';
 
-// Auth Provider removed — no login required for dev/internal use
+// =============================================================================
+// Login Page
+// =============================================================================
+function LoginPage() {
+  const { login } = useAuth();
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  const [submitting, setSubmitting] = useState(false);
 
-// Login Page removed
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSubmitting(true);
+    setError('');
+    const ok = await login(password);
+    if (!ok) {
+      setError('Falsches Passwort');
+    }
+    setSubmitting(false);
+  };
+
+  return (
+    <div className="min-h-screen bg-background flex items-center justify-center">
+      <div className="w-full max-w-sm p-8 bg-surface rounded-xl shadow-lg">
+        <div className="flex items-center justify-center mb-6">
+          <span className="text-3xl mr-2">🩺</span>
+          <h1 className="text-xl font-bold text-primary">PhysioFlow</h1>
+        </div>
+        <form onSubmit={handleSubmit}>
+          <label className="block text-sm font-medium text-text-secondary mb-1">Passwort</label>
+          <input
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 mb-3"
+            autoFocus
+            disabled={submitting}
+          />
+          {error && <p className="text-red-600 text-sm mb-3">{error}</p>}
+          <button
+            type="submit"
+            disabled={submitting}
+            className="w-full py-2 px-4 bg-primary-600 text-white font-medium rounded-lg hover:bg-primary-700 disabled:opacity-50 transition-colors"
+          >
+            {submitting ? 'Anmelden...' : 'Anmelden'}
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+}
 
 // =============================================================================
 // Main App with Sidebar
 // =============================================================================
 function AppContent() {
-  // Auth removed — always show app
+  const { authenticated, loading, logout } = useAuth();
   const { currentPage, openModal, navigateTo, setOpenModal } = useNavigation();
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
-  // Clear openModal when page changes (unless it was set by navigateTo)
   useEffect(() => {
     if (!openModal) return;
-    // Modal is handled by the page component via the store
   }, [currentPage, openModal]);
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600"></div>
+      </div>
+    );
+  }
+
+  if (!authenticated) {
+    return <LoginPage />;
+  }
 
   const navItems: { id: Page; label: string; icon: string; subItems?: { label: string; action: () => void }[] }[] = [
     { id: 'dashboard', label: 'Auswertung', icon: '📊' },
@@ -101,6 +158,12 @@ function AppContent() {
         </nav>
 
         <div className="p-4 border-t border-gray-200">
+          <button
+            onClick={logout}
+            className="w-full py-2 px-4 text-sm text-text-secondary hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+          >
+            Abmelden
+          </button>
           <p className="text-xs text-text-secondary text-center mt-2">
             v1.2 • Praxis-Software
           </p>
@@ -116,7 +179,13 @@ function AppContent() {
             <h1 className="text-lg font-bold text-primary">PhysioFlow</h1>
           </div>
           <div className="flex items-center gap-2">
-            {/* logout removed */}
+            <button
+              onClick={logout}
+              className="p-2 rounded-lg hover:bg-gray-100 text-sm text-text-secondary"
+              title="Abmelden"
+            >
+              🚪
+            </button>
             <button
               onClick={() => setSidebarOpen(!sidebarOpen)}
               className="p-2 rounded-lg hover:bg-gray-100"
@@ -159,7 +228,11 @@ function AppContent() {
 }
 
 function App() {
-  return <AppContent />;
+  return (
+    <AuthProvider>
+      <AppContent />
+    </AuthProvider>
+  );
 }
 
 export default App;
