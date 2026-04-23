@@ -1,12 +1,19 @@
 import { useState, useEffect } from 'react';
 import { Invoice, Patient, Appointment } from '../types';
+import { Modal, showToast, ConfirmModal } from '../components/ui';
 
-export default function Invoices() {
+interface InvoicesProps {
+  initialModal: string | null;
+  onModalConsumed: () => void;
+}
+
+export default function Invoices({ initialModal, onModalConsumed }: InvoicesProps) {
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [patients, setPatients] = useState<Patient[]>([]);
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
+  const [confirmAction, setConfirmAction] = useState<{ onConfirm: () => void; message: string } | null>(null);
   const [filterPaid, setFilterPaid] = useState<'all' | 'paid' | 'unpaid'>('all');
 
   const [formData, setFormData] = useState({
@@ -16,6 +23,14 @@ export default function Invoices() {
     rate_per_unit: '50',
     description: 'Physiotherapeutische Behandlung'
   });
+
+  // Handle initialModal from navigation store
+  useEffect(() => {
+    if (initialModal === 'invoice') {
+      setShowModal(true);
+      onModalConsumed();
+    }
+  }, [initialModal]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     fetchInvoices();
@@ -34,7 +49,8 @@ export default function Invoices() {
       if (filterPaid === 'paid') url += '?paid=true';
       else if (filterPaid === 'unpaid') url += '?paid=false';
       
-      const res = await fetch(url);
+      const res = await fetch(url, { credentials: 'include' });
+      if (res.status === 401) return;
       const data = await res.json();
       if (data.success) {
         setInvoices(data.data);
@@ -48,7 +64,7 @@ export default function Invoices() {
 
   const fetchPatients = async () => {
     try {
-      const res = await fetch('/api/patients');
+      const res = await fetch('/api/patients', { credentials: 'include' });
       const data = await res.json();
       if (data.success) {
         setPatients(data.data);
@@ -60,7 +76,7 @@ export default function Invoices() {
 
   const fetchAppointments = async (patientId: string) => {
     try {
-      const res = await fetch(`/api/appointments?patient_id=${patientId}`);
+      const res = await fetch(`/api/appointments?patient_id=${patientId}`, { credentials: 'include' });
       const data = await res.json();
       if (data.success) {
         setAppointments(data.data);
@@ -77,6 +93,7 @@ export default function Invoices() {
       const res = await fetch('/api/invoices', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify({
           ...formData,
           units: parseFloat(formData.units),
@@ -89,11 +106,12 @@ export default function Invoices() {
         fetchInvoices();
         setShowModal(false);
         setFormData({ patient_id: '', appointment_id: '', units: '10', rate_per_unit: '50', description: 'Physiotherapeutische Behandlung' });
+        showToast('Honorarnote erstellt', 'success');
       } else {
-        alert(data.error || 'Fehler beim Erstellen');
+        showToast(data.error || 'Fehler beim Erstellen', 'error');
       }
     } catch (error) {
-      alert('Fehler beim Erstellen');
+      showToast('Fehler beim Erstellen', 'error');
     }
   };
 
@@ -102,14 +120,16 @@ export default function Invoices() {
       const res = await fetch(`/api/invoices/${invoice.id}/paid`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify({ paid: !invoice.paid })
       });
       const data = await res.json();
       if (data.success) {
         fetchInvoices();
+        showToast(invoice.paid ? 'Als offen markiert' : 'Als bezahlt markiert', 'success');
       }
     } catch (error) {
-      alert('Fehler beim Aktualisieren');
+      showToast('Fehler beim Aktualisieren', 'error');
     }
   };
 
@@ -118,14 +138,22 @@ export default function Invoices() {
   };
 
   const deleteInvoice = async (id: number) => {
-    if (!confirm('Honorarnote wirklich löschen?')) return;
-    try {
-      const res = await fetch(`/api/invoices/${id}`, { method: 'DELETE' });
-      const data = await res.json();
-      if (data.success) fetchInvoices();
-    } catch (error) {
-      alert('Fehler beim Löschen');
-    }
+    setConfirmAction({
+      onConfirm: async () => {
+        setConfirmAction(null);
+        try {
+          const res = await fetch(`/api/invoices/${id}`, { method: 'DELETE', credentials: 'include' });
+          const data = await res.json();
+          if (data.success) {
+            fetchInvoices();
+            showToast('Honorarnote gelöscht', 'success');
+          }
+        } catch (error) {
+          showToast('Fehler beim Löschen', 'error');
+        }
+      },
+      message: 'Honorarnote wirklich löschen?',
+    });
   };
 
   const totalUnpaid = invoices.filter(i => !i.paid).reduce((sum, i) => sum + i.total, 0);
@@ -142,9 +170,7 @@ export default function Invoices() {
           <h2 className="text-2xl font-bold text-gray-900">Finanzen</h2>
           <p className="text-gray-500">{invoices.length} Honorarnoten {filterPaid === 'unpaid' && `• €${totalUnpaid.toFixed(2)} offen`}</p>
         </div>
-        <button onClick={() => setShowModal(true)} className="bg-blue-600 text-white px-6 py-2.5 rounded-lg font-medium hover:bg-blue-700 transition-colors shadow-sm">
-          + Neue Honorarnote
-        </button>
+        <button onClick={() => setShowModal(true)} className="bg-blue-600 text-white px-6 py-2.5 rounded-lg font-medium hover:bg-blue-700 transition-colors shadow-sm">+ Neue Honorarnote</button>
       </div>
 
       {/* Filter */}
@@ -193,9 +219,7 @@ export default function Invoices() {
                     <td className="px-6 py-4 whitespace-nowrap text-gray-500">{invoice.created_at ? new Date(invoice.created_at).toLocaleDateString('de-AT') : '-'}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-right"><span className="font-mono font-bold text-gray-900">€ {invoice.total.toFixed(2)}</span></td>
                     <td className="px-6 py-4 whitespace-nowrap text-center">
-                      <button onClick={() => togglePaid(invoice)} className={`inline-flex px-3 py-1 rounded-full text-sm font-medium ${invoice.paid ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
-                        {invoice.paid ? '✓ Bezahlt' : '○ Offen'}
-                      </button>
+                      <button onClick={() => togglePaid(invoice)} className={`inline-flex px-3 py-1 rounded-full text-sm font-medium ${invoice.paid ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>{invoice.paid ? '✓ Bezahlt' : '○ Offen'}</button>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-right">
                       <div className="flex justify-end gap-2">
@@ -209,66 +233,64 @@ export default function Invoices() {
             </table>
           </div>
         ) : (
-          <div className="text-center py-12 text-gray-500">
-            <span className="text-4xl mb-2 block">📋</span>
-            <p>{filterPaid === 'all' ? 'Noch keine Honorarnoten' : 'Keine Noten in dieser Kategorie'}</p>
-          </div>
+          <div className="text-center py-12 text-gray-500"><span className="text-4xl mb-2 block">📋</span><p>{filterPaid === 'all' ? 'Noch keine Honorarnoten' : 'Keine Noten in dieser Kategorie'}</p></div>
         )}
       </div>
 
-      {/* Modal */}
-      {showModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-xl max-w-lg w-full max-h-[90vh] overflow-y-auto">
-            <div className="px-6 py-4 border-b border-gray-200 sticky top-0 bg-white">
-              <h3 className="text-lg font-semibold text-gray-900">Neue Honorarnote</h3>
-            </div>
-            <form onSubmit={handleSubmit} className="p-6 space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Patient *</label>
-                <select required value={formData.patient_id} onChange={(e) => setFormData({ ...formData, patient_id: e.target.value, appointment_id: '' })} className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
-                  <option value="">Patient auswählen...</option>
-                  {patients.map(p => <option key={p.id} value={p.id}>{p.first_name} {p.last_name}</option>)}
-                </select>
-              </div>
-              {formData.patient_id && appointments.length > 0 && (
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Zugehöriger Termin (optional)</label>
-                  <select value={formData.appointment_id} onChange={(e) => setFormData({ ...formData, appointment_id: e.target.value })} className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
-                    <option value="">Kein Termin</option>
-                    {appointments.map(apt => <option key={apt.id} value={apt.id}>{apt.date} {apt.time_start} - {apt.treatment_type}</option>)}
-                  </select>
-                </div>
-              )}
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Einheiten *</label>
-                  <input type="number" required step="0.5" min="0.5" value={formData.units} onChange={(e) => setFormData({ ...formData, units: e.target.value })} className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 font-mono" />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">€/Einheit *</label>
-                  <input type="number" required step="0.01" min="0" value={formData.rate_per_unit} onChange={(e) => setFormData({ ...formData, rate_per_unit: e.target.value })} className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 font-mono" />
-                </div>
-              </div>
-              <div className="bg-blue-50 rounded-lg p-4 border border-blue-200">
-                <div className="flex justify-between items-center">
-                  <span className="text-gray-600 font-medium">Gesamtbetrag:</span>
-                  <span className="text-3xl font-bold text-blue-900 font-mono">{formatCurrency(parseFloat(formData.units || '0') * parseFloat(formData.rate_per_unit || '0'))}</span>
-                </div>
-                <p className="text-xs text-gray-400 mt-2 text-center">Steuerbefreit gemäß §6 Abs.1 Z 19 UStG</p>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Leistungsbeschreibung</label>
-                <textarea value={formData.description} onChange={(e) => setFormData({ ...formData, description: e.target.value })} rows={2} className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" placeholder="z.B. Physiotherapeutische Behandlung" />
-              </div>
-              <div className="flex gap-3 pt-4 border-t border-gray-200">
-                <button type="button" onClick={() => setShowModal(false)} className="flex-1 px-4 py-2.5 border border-gray-300 rounded-lg font-medium hover:bg-gray-50">Abbrechen</button>
-                <button type="submit" className="flex-1 px-4 py-2.5 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700">Erstellen</button>
-              </div>
-            </form>
+      {/* New Invoice Modal — using unified Modal */}
+      <Modal isOpen={showModal} onClose={() => setShowModal(false)} title="Neue Honorarnote" size="lg">
+        <form onSubmit={handleSubmit} className="p-6 space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Patient *</label>
+            <select required value={formData.patient_id} onChange={(e) => setFormData({ ...formData, patient_id: e.target.value, appointment_id: '' })} className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+              <option value="">Patient auswählen...</option>
+              {patients.map(p => <option key={p.id} value={p.id}>{p.first_name} {p.last_name}</option>)}
+            </select>
           </div>
-        </div>
-      )}
+          {formData.patient_id && appointments.length > 0 && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Zugehöriger Termin (optional)</label>
+              <select value={formData.appointment_id} onChange={(e) => setFormData({ ...formData, appointment_id: e.target.value })} className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                <option value="">Kein Termin</option>
+                {appointments.map(apt => <option key={apt.id} value={apt.id}>{apt.date} {apt.time_start} - {apt.treatment_type}</option>)}
+              </select>
+            </div>
+          )}
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Einheiten *</label>
+              <input type="number" required step="0.5" min="0.5" value={formData.units} onChange={(e) => setFormData({ ...formData, units: e.target.value })} className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 font-mono" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">€/Einheit *</label>
+              <input type="number" required step="0.01" min="0" value={formData.rate_per_unit} onChange={(e) => setFormData({ ...formData, rate_per_unit: e.target.value })} className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 font-mono" />
+            </div>
+          </div>
+          <div className="bg-blue-50 rounded-lg p-4 border border-blue-200">
+            <div className="flex justify-between items-center">
+              <span className="text-gray-600 font-medium">Gesamtbetrag:</span>
+              <span className="text-3xl font-bold text-blue-900 font-mono">{formatCurrency(parseFloat(formData.units || '0') * parseFloat(formData.rate_per_unit || '0'))}</span>
+            </div>
+            <p className="text-xs text-gray-400 mt-2 text-center">Steuerbefreit gemäß §6 Abs.1 Z 19 UStG</p>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Leistungsbeschreibung</label>
+            <textarea value={formData.description} onChange={(e) => setFormData({ ...formData, description: e.target.value })} rows={2} className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" placeholder="z.B. Physiotherapeutische Behandlung" />
+          </div>
+          <div className="flex gap-3 pt-4 border-t border-gray-200">
+            <button type="button" onClick={() => setShowModal(false)} className="flex-1 px-4 py-2.5 border border-gray-300 rounded-lg font-medium hover:bg-gray-50">Abbrechen</button>
+            <button type="submit" className="flex-1 px-4 py-2.5 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700">Erstellen</button>
+          </div>
+        </form>
+      </Modal>
+      <ConfirmModal
+        open={!!confirmAction}
+        onConfirm={confirmAction?.onConfirm ?? (() => {})}
+        onCancel={() => setConfirmAction(null)}
+        message={confirmAction?.message ?? ''}
+        variant="danger"
+        confirmText="Löschen"
+      />
     </div>
   );
 }

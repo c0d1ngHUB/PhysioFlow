@@ -25,6 +25,13 @@ const schemaPath = path.join(__dirname, 'schema.sql');
 const schema = fs.readFileSync(schemaPath, 'utf-8');
 db.exec(schema);
 
+// Migrations: add columns if missing (safe for existing DBs)
+const columns = db.prepare("PRAGMA table_info(appointments)").all() as { name: string }[];
+if (!columns.some(col => col.name === 'status')) {
+  db.exec("ALTER TABLE appointments ADD COLUMN status TEXT NOT NULL DEFAULT 'scheduled'");
+  console.log('✅ Migration: added status column to appointments');
+}
+
 console.log('✅ Database initialized at:', dbPath);
 
 export default db;

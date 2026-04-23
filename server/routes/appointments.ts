@@ -155,6 +155,35 @@ router.put('/:id', (req, res) => {
   }
 });
 
+// Cancel appointment
+router.post('/:id/cancel', (req, res) => {
+  try {
+    const existing = db.prepare('SELECT * FROM appointments WHERE id = ?').get(req.params.id);
+    if (!existing) {
+      return res.status(404).json({ success: false, error: 'Termin nicht gefunden' });
+    }
+    if (existing.status === 'cancelled') {
+      const appointment = db.prepare(`
+        SELECT a.*, p.first_name || ' ' || p.last_name as patient_name, p.phone as patient_phone
+        FROM appointments a
+        JOIN patients p ON a.patient_id = p.id
+        WHERE a.id = ?
+      `).get(req.params.id);
+      return res.json({ success: true, data: appointment });
+    }
+    db.prepare('UPDATE appointments SET status = ? WHERE id = ?').run('cancelled', req.params.id);
+    const appointment = db.prepare(`
+      SELECT a.*, p.first_name || ' ' || p.last_name as patient_name, p.phone as patient_phone
+      FROM appointments a
+      JOIN patients p ON a.patient_id = p.id
+      WHERE a.id = ?
+    `).get(req.params.id);
+    res.json({ success: true, data: appointment });
+  } catch (error) {
+    res.status(500).json({ success: false, error: (error as Error).message });
+  }
+});
+
 // Delete appointment
 router.delete('/:id', (req, res) => {
   try {

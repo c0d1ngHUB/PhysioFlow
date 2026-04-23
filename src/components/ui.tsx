@@ -1,5 +1,5 @@
 // Reusable UI components for PhysioFlow - Medical Practice Design
-import { useState, useEffect, ReactNode } from 'react';
+import { useState, useEffect, useCallback, ReactNode } from 'react';
 
 // ============================================================================
 // LOADING COMPONENTS
@@ -392,21 +392,32 @@ export function Modal({ isOpen, onClose, title, children, size = 'md' }: ModalPr
     xl: 'max-w-2xl',
     full: 'max-w-4xl',
   };
-  
+
+  const handleKeyDown = useCallback((e: KeyboardEvent) => {
+    if (e.key === 'Escape') onClose();
+  }, [onClose]);
+
+  useEffect(() => {
+    if (isOpen) {
+      document.addEventListener('keydown', handleKeyDown);
+      return () => document.removeEventListener('keydown', handleKeyDown);
+    }
+  }, [isOpen, handleKeyDown]);
+
   if (!isOpen) return null;
-  
+
   return (
-    <div 
+    <div
       className="fixed inset-0 bg-medical-900/50 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-fade-in"
       onClick={onClose}
     >
-      <div 
+      <div
         className={`bg-white rounded-2xl shadow-2xl ${sizes[size]} w-full max-h-[90vh] overflow-hidden animate-scale-in`}
         onClick={e => e.stopPropagation()}
       >
         <div className="px-6 py-4 border-b border-medical-100 flex items-center justify-between bg-medical-50/50">
           <h3 className="text-lg font-semibold text-text-primary">{title}</h3>
-          <button 
+          <button
             onClick={onClose}
             className="p-2 hover:bg-medical-100 rounded-xl text-medical-500 hover:text-medical-700 transition-colors"
             aria-label="Schließen"
@@ -879,6 +890,44 @@ export function Divider({ text, className = '' }: { text?: string; className?: s
   }
   
   return <div className={`border-t border-medical-200 ${className}`} />;
+}
+
+// ============================================================================
+// CONFIRM MODAL
+// ============================================================================
+
+interface ConfirmModalProps {
+  open: boolean;
+  onConfirm: () => void;
+  onCancel: () => void;
+  title?: string;
+  message: string;
+  confirmText?: string;
+  cancelText?: string;
+  variant?: 'danger' | 'default';
+}
+
+export function ConfirmModal({
+  open,
+  onConfirm,
+  onCancel,
+  title = 'Bestätigung',
+  message,
+  confirmText = 'Bestätigen',
+  cancelText = 'Abbrechen',
+  variant = 'default',
+}: ConfirmModalProps) {
+  return (
+    <Modal isOpen={open} onClose={onCancel} title={title} size="sm">
+      <div className="p-6">
+        <p className="text-text-secondary mb-6">{message}</p>
+        <div className="flex justify-end gap-3">
+          <Button variant="outline" onClick={onCancel}>{cancelText}</Button>
+          <Button variant={variant === 'danger' ? 'danger' : 'primary'} onClick={onConfirm}>{confirmText}</Button>
+        </div>
+      </div>
+    </Modal>
+  );
 }
 
 // ============================================================================

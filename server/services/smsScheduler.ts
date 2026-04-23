@@ -1,8 +1,6 @@
 // SMS Scheduler Service - runs automatically via cron
 import db from '../db/index.js';
-
-const SMS77_API_KEY = process.env.SMS77_API_KEY || '';
-const SMS77_URL = 'https://rest.sms77.de/api';
+import { formatPhone, sendSms } from './sms.js';
 
 interface ScheduledSMS {
   id: number;
@@ -21,9 +19,6 @@ export async function processScheduledSMS(): Promise<{ sent: number; failed: num
   const result = { sent: 0, failed: 0 };
   
   // Find appointments where SMS should be sent (within next hour, scheduled status)
-  const now = new Date();
-  const oneHourFromNow = new Date(now.getTime() + 60 * 60 * 1000);
-  
   const scheduledSMS = db.prepare(`
     SELECT 
       a.id as appointment_id,
@@ -45,7 +40,11 @@ export async function processScheduledSMS(): Promise<{ sent: number; failed: num
   
   for (const sms of scheduledSMS) {
     try {
-      await sendSMSReminder(sms);
+      const phone = formatPhone(sms.patient_phone);
+      
+      const message = `Hallo ${sms.patient_name.split(' ')[0]}, wir sehen uns morgen um ${sms.appointment_time.slice(0, 5)} Uhr in der Praxis. Bitte bringen Sie Ihre Versichertenkarte mit. Ihr PhysioFlow`;
+      
+      await sendSms({ to: phone, text: message });
       result.sent++;
       
       // Mark as sent
@@ -64,54 +63,6 @@ export async function processScheduledSMS(): Promise<{ sent: number; failed: num
   }
   
   return result;
-}
-
-async function sendSMSReminder(sms: ScheduledSMS): Promise<void> {
-  const { patient_name, patient_phone, appointment_date, appointment_time } = sms;
-  
-  // Format phone number
-  let phone = patient_phone.replace(/[\s]/g, '');
-  if (phone.startsWith('0')) {
-    phone = '+43' + phone.slice(1);
-  } else if (!phone.startsWith('+')) {
-    phone = '+43' + phone;
-  }
-  
-  // Validate
-  if (!/^\+[1-9]\d{7,14}$/.test(phone)) {
-    throw new Error('Invalid phone number format');
-  }
-  
-  // Format date for display (DD.MM.YYYY)
-  const dateObj = new Date(appointment_date);
-  const formattedDate = dateObj.toLocaleDateString('de-AT', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric'
-  });
-  
-  const message = `Hallo ${patient_name.split(' ')[0]}, wir sehen uns morgen um ${appointment_time.slice(0, 5)} Uhr in der Praxis. Bitte bringen Sie Ihre Versichertenkarte mit. Ihr PhysioFlow`;
-  
-  if (!SMS77_API_KEY) {
-    console.log(`📱 [SIMULATED SMS] To: ${phone}, Message: ${message.substring(0, 50)}...`);
-    return; // Simulated success
-  }
-  
-  const params = new URLSearchParams({
-    p: SMS77_API_KEY,
-    to: phone,
-    text: message,
-    from: 'PhysioFlow'
-  });
-  
-  const response = await fetch(`${SMS77_URL}/sms?${params}`, { method: 'GET' });
-  const result = await response.text();
-  
-  if (!response.ok) {
-    throw new Error(`SMS77 API error: ${result}`);
-  }
-  
-  console.log(`✅ SMS sent to ${phone}, ID: ${result}`);
 }
 
 /**
@@ -154,7 +105,9 @@ export async function sendManualSMS(appointmentId: number): Promise<{ success: b
   }
   
   try {
-    await sendSMSReminder(appointment);
+    const phone = formatPhone(appointment.patient_phone);
+    const message = `Hallo ${appointment.patient_name.split(' ')[0]}, wir sehen uns morgen um ${appointment.appointment_time.slice(0, 5)} Uhr in der Praxis. Bitte bringen Sie Ihre Versichertenkarte mit. Ihr PhysioFlow`;
+    await sendSms({ to: phone, text: message });
     return { success: true };
   } catch (error) {
     return { success: false, error: (error as Error).message };

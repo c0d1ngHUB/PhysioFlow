@@ -6,9 +6,13 @@ import QRCode from 'qrcode';
 const router = Router();
 
 // Generate next invoice number: RF-YYYYMMDD-XXX
+// Must be called within a BEGIN IMMEDIATE transaction to prevent race conditions
 function generateInvoiceNumber(): string {
   const today = new Date();
-  const dateStr = today.toISOString().slice(0, 10).replace(/-/g, '');
+  const yyyy = today.getFullYear();
+  const mm = String(today.getMonth() + 1).padStart(2, '0');
+  const dd = String(today.getDate()).padStart(2, '0');
+  const dateStr = `${yyyy}${mm}${dd}`;
   
   // Get count of invoices today
   const todayInvoices = db.prepare(`
@@ -94,13 +98,19 @@ router.post('/', async (req, res) => {
   }
   
   const total = units * rate_per_unit;
-  const invoice_number = generateInvoiceNumber();
   
   try {
-    const result = db.prepare(`
-      INSERT INTO invoices (invoice_number, patient_id, appointment_id, units, rate_per_unit, total, description)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `).run(invoice_number, patient_id, appointment_id || null, units, rate_per_unit, total, description || '');
+    // Wrap number generation + INSERT in a transaction to prevent race conditions
+    const createInvoice = db.transaction(() => {
+      const invoice_number = generateInvoiceNumber();
+      const info = db.prepare(`
+        INSERT INTO invoices (invoice_number, patient_id, appointment_id, units, rate_per_unit, total, description)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `).run(invoice_number, patient_id, appointment_id || null, units, rate_per_unit, total, description || '');
+      return info.lastInsertRowid;
+    });
+    
+    const lastId = createInvoice();
     
     const invoice = db.prepare(`
       SELECT i.*, p.first_name || ' ' || p.last_name as patient_name,
@@ -109,7 +119,7 @@ router.post('/', async (req, res) => {
       FROM invoices i
       JOIN patients p ON i.patient_id = p.id
       WHERE i.id = ?
-    `).get(result.lastInsertRowid);
+    `).get(lastId);
     
     res.status(201).json({ success: true, data: invoice });
   } catch (error) {

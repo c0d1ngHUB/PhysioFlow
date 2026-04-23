@@ -3,6 +3,14 @@ import db from '../db/index.js';
 
 const router = Router();
 
+// Ensure newer columns exist (idempotent for existing databases)
+try {
+  db.prepare('ALTER TABLE patients ADD COLUMN insurance_number TEXT').run();
+} catch { /* column already exists */ }
+try {
+  db.prepare('ALTER TABLE patients ADD COLUMN address TEXT').run();
+} catch { /* column already exists */ }
+
 // Get all patients
 router.get('/', (_req, res) => {
   try {
@@ -28,7 +36,7 @@ router.get('/:id', (req, res) => {
 
 // Create patient
 router.post('/', (req, res) => {
-  const { first_name, last_name, phone, email, birthdate, notes, address } = req.body;
+  const { first_name, last_name, phone, email, birthdate, notes, address, insurance_number } = req.body;
   
   if (!first_name || !last_name) {
     return res.status(400).json({ success: false, error: 'Vorname und Nachname sind erforderlich' });
@@ -36,9 +44,9 @@ router.post('/', (req, res) => {
   
   try {
     const result = db.prepare(`
-      INSERT INTO patients (first_name, last_name, phone, email, birthdate, notes, address)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `).run(first_name, last_name, phone || null, email || null, birthdate || null, notes || null, address || null);
+      INSERT INTO patients (first_name, last_name, phone, email, birthdate, notes, address, insurance_number)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(first_name, last_name, phone || null, email || null, birthdate || null, notes || null, address || null, insurance_number || null);
     
     const patient = db.prepare('SELECT * FROM patients WHERE id = ?').get(result.lastInsertRowid);
     res.status(201).json({ success: true, data: patient });
@@ -49,15 +57,15 @@ router.post('/', (req, res) => {
 
 // Update patient
 router.put('/:id', (req, res) => {
-  const { first_name, last_name, phone, email, birthdate, notes, address } = req.body;
+  const { first_name, last_name, phone, email, birthdate, notes, address, insurance_number } = req.body;
   const { id } = req.params;
   
   try {
     const result = db.prepare(`
       UPDATE patients 
-      SET first_name = ?, last_name = ?, phone = ?, email = ?, birthdate = ?, notes = ?, address = ?
+      SET first_name = ?, last_name = ?, phone = ?, email = ?, birthdate = ?, notes = ?, address = ?, insurance_number = ?
       WHERE id = ?
-    `).run(first_name, last_name, phone, email, birthdate, notes, address, id);
+    `).run(first_name, last_name, phone, email, birthdate, notes, address, insurance_number, id);
     
     if (result.changes === 0) {
       return res.status(404).json({ success: false, error: 'Patient nicht gefunden' });

@@ -103,24 +103,34 @@ router.post('/', (req, res) => {
 router.put('/:id', (req, res) => {
   try {
     const { id } = req.params;
-    const { category, description, amount, date, receipt_path } = req.body;
+    const body = req.body;
     
-    db.prepare(`
+    // Only update fields that are explicitly provided in the request body
+    const updates: string[] = [];
+    const values: unknown[] = [];
+    
+    if ('category' in body) { updates.push('category = ?'); values.push(body.category); }
+    if ('description' in body) { updates.push('description = ?'); values.push(body.description); }
+    if ('amount' in body) { updates.push('amount = ?'); values.push(body.amount); }
+    if ('date' in body) { updates.push('date = ?'); values.push(body.date); }
+    if ('receipt_path' in body) { updates.push('receipt_path = ?'); values.push(body.receipt_path); }
+    
+    if (updates.length === 0) {
+      return res.status(400).json({ success: false, error: 'Keine Felder zum Aktualisieren angegeben' });
+    }
+    
+    values.push(id);
+    const result = db.prepare(`
       UPDATE expenses 
-      SET category = COALESCE(?, category),
-          description = COALESCE(?, description),
-          amount = COALESCE(?, amount),
-          date = COALESCE(?, date),
-          receipt_path = COALESCE(?, receipt_path)
+      SET ${updates.join(', ')}
       WHERE id = ?
-    `).run(category, description, amount, date, receipt_path, id);
+    `).run(...values);
     
-    const expense = db.prepare('SELECT * FROM expenses WHERE id = ?').get(id);
-    
-    if (!expense) {
+    if (result.changes === 0) {
       return res.status(404).json({ success: false, error: 'Ausgabe nicht gefunden' });
     }
     
+    const expense = db.prepare('SELECT * FROM expenses WHERE id = ?').get(id);
     res.json({ success: true, data: expense });
   } catch (error) {
     res.status(500).json({ success: false, error: 'Failed to update expense' });
@@ -131,7 +141,10 @@ router.put('/:id', (req, res) => {
 router.delete('/:id', (req, res) => {
   try {
     const { id } = req.params;
-    db.prepare('DELETE FROM expenses WHERE id = ?').run(id);
+    const result = db.prepare('DELETE FROM expenses WHERE id = ?').run(id);
+    if (result.changes === 0) {
+      return res.status(404).json({ success: false, error: 'Ausgabe nicht gefunden' });
+    }
     res.json({ success: true });
   } catch (error) {
     res.status(500).json({ success: false, error: 'Failed to delete expense' });

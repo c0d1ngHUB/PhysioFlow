@@ -1,11 +1,8 @@
 import { Router } from 'express';
 import db from '../db/index.js';
+import { formatPhone, sendSms } from '../services/sms.js';
 
 const router = Router();
-
-// SMS77.de API configuration
-const SMS77_API_KEY = process.env.SMS77_API_KEY || '';
-const SMS77_URL = 'https://rest.sms77.de/api';
 
 // Send SMS reminder
 router.post('/send', async (req, res) => {
@@ -18,78 +15,22 @@ router.post('/send', async (req, res) => {
     });
   }
   
-  // Format phone number to E.164 format
-  let phone = to.replace(/[\s]/g, '');
-  
-  // Detect country and normalize accordingly
-  if (phone.startsWith('+')) {
-    // Already in international format, keep as is
-  } else if (phone.startsWith('0')) {
-    // Austrian format - prepend country code
-    phone = '+43' + phone.slice(1);
-  } else {
-    // Unknown format, try Austrian as default
-    phone = '+43' + phone;
-  }
-  
-  // Basic E.164 validation
-  if (!/^\+[1-9]\d{7,14}$/.test(phone)) {
+  let phone: string;
+  try {
+    phone = formatPhone(to);
+  } catch (err) {
     return res.status(400).json({
       success: false,
-      error: 'Ungültiges Telefonnummernformat. Erwartet: +43... (AT), +49... (DE), etc.'
+      error: (err as Error).message,
     });
   }
   
   // Create personalized message
   const message = `Hallo ${patient_name}, wir sehen uns am ${appointment_date} um ${appointment_time} in der Praxis. Bitte bringen Sie Ihre Versichertenkarte mit. Ihr PhysioFlow`;
   
-  // If no API key, simulate sending (don't log patient name for privacy)
-  if (!SMS77_API_KEY) {
-    console.log(`📱 [SIMULATED SMS] To: ${phone}, Time: ${appointment_time}, Date: ${appointment_date}`);
-    
-    return res.json({ 
-      success: true, 
-      data: { 
-        id: 'sim_' + Date.now(),
-        to: phone,
-        message,
-        status: 'simulated',
-        simulated: true
-      }
-    });
-  }
-  
   try {
-    const params = new URLSearchParams({
-      p: SMS77_API_KEY,
-      to: phone,
-      text: message,
-      from: 'PhysioFlow'
-    });
-    
-    const response = await fetch(`${SMS77_URL}/sms?${params}`, {
-      method: 'GET'
-    });
-    
-    const result = await response.text();
-    
-    if (response.ok) {
-      res.json({ 
-        success: true, 
-        data: { 
-          id: result,
-          to: phone,
-          message,
-          status: 'sent'
-        }
-      });
-    } else {
-      res.status(400).json({ 
-        success: false, 
-        error: 'SMS konnte nicht gesendet werden',
-        details: result
-      });
-    }
+    const result = await sendSms({ to: phone, text: message });
+    res.json({ success: true, data: result });
   } catch (error) {
     console.error('SMS Error:', error);
     res.status(500).json({ 
@@ -117,7 +58,7 @@ router.post('/schedule', (req, res) => {
       FROM appointments a
       JOIN patients p ON a.patient_id = p.id
       WHERE a.id = ?
-    `).get(appointment_id) as any;
+    `).get(appointment_id) as { date: string; time_start: string; patient_name: string; patient_phone: string } | undefined;
     
     if (!appointment) {
       return res.status(404).json({ success: false, error: 'Termin nicht gefunden' });

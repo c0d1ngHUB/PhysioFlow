@@ -3,37 +3,104 @@ import db from '../db/index.js';
 
 const router = Router();
 
+/**
+ * Get today's date string in YYYY-MM-DD without timezone pitfalls.
+ * Uses UTC to avoid DST shifts that new Date().toISOString() can cause.
+ */
+function todayStr(): string {
+  const d = new Date();
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+/**
+ * Format a Date as YYYY-MM-DD using local components (no timezone shift).
+ */
+function toLocalDateStr(d: Date): string {
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
+}
+
 // Get dashboard statistics
 router.get('/', (_req, res) => {
   try {
-    const today = new Date().toISOString().slice(0, 10);
+    const today = todayStr();
     
-    // Today's appointments
-    const todayAppointments = db.prepare(`
-      SELECT COUNT(*) as count FROM appointments WHERE date = ?
-    `).get(today) as { count: number };
+    // Calculate date range for "this month"
+    const thisMonthStart = today.slice(0, 7) + '-01';
     
-    // Upcoming appointments (next 7 days)
-    const weekFromNow = new Date();
+    // Calculate last month range
+    const now = new Date();
+    const lastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const lastMonthStart = toLocalDateStr(lastMonth);
+    const thisMonthStartAsDate = new Date(now.getFullYear(), now.getMonth(), 1);
+    const lastMonthEnd = toLocalDateStr(new Date(thisMonthStartAsDate.getTime() - 86400000));
+
+    // Week range (Monday to Sunday)
+    const weekStart = new Date(now);
+    const dayOfWeek = weekStart.getDay();
+    const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+    weekStart.setDate(weekStart.getDate() + mondayOffset);
+    const weekStartStr = toLocalDateStr(weekStart);
+    const weekFromNow = new Date(now);
     weekFromNow.setDate(weekFromNow.getDate() + 7);
-    const weekFromNowStr = weekFromNow.toISOString().slice(0, 10);
-    
-    const upcomingAppointments = db.prepare(`
-      SELECT COUNT(*) as count FROM appointments 
-      WHERE date >= ? AND date <= ? AND date != ?
-    `).get(today, weekFromNowStr, today) as { count: number };
-    
-    // Unpaid invoices
+    const weekFromNowStr = toLocalDateStr(weekFromNow);
+
+    // --- Query 1: Aggregate counts in a single query ---
+    const stats = db.prepare(`
+      SELECT
+        (SELECT COUNT(*) FROM appointments WHERE date = ?) AS today_appointments,
+        (SELECT COUNT(*) FROM appointments WHERE date >= ? AND date <= ? AND date != ?) AS upcoming_appointments,
+        (SELECT COUNT(*) FROM patients) AS total_patients,
+        (SELECT COUNT(*) FROM appointments WHERE date >= ? AND date <= ?) AS this_month_appointments
+    `).get(today, today, weekFromNowStr, today, thisMonthStart, today) as {
+      today_appointments: number;
+      upcoming_appointments: number;
+      total_patients: number;
+      this_month_appointments: number;
+    };
+
+    // --- Query 2: Unpaid invoices (count + total) ---
     const unpaidInvoices = db.prepare(`
-      SELECT COUNT(*) as count, SUM(total) as total FROM invoices WHERE paid = 0
+      SELECT COUNT(*) as count, COALESCE(SUM(total), 0) as total FROM invoices WHERE paid = 0
     `).get() as { count: number; total: number };
-    
-    // Total patients
-    const totalPatients = db.prepare(`
-      SELECT COUNT(*) as count FROM patients
-    `).get() as { count: number };
-    
-    // Today's appointment details
+
+    // --- Query 3: Revenue this month + last month in one query ---
+    const revenue = db.prepare(`
+      SELECT
+        COALESCE(SUM(CASE WHEN created_at >= ? THEN total ELSE 0 END), 0) AS this_month,
+        COALESCE(SUM(CASE WHEN created_at >= ? AND created_at < ? THEN total ELSE 0 END), 0) AS last_month
+      FROM invoices
+      WHERE paid = 1
+    `).get(thisMonthStart, lastMonthStart, thisMonthStart) as { this_month: number; last_month: number };
+
+    // --- Query 4: 6-month revenue in a single query using GROUP BY ---
+    const sixMonthsRows = db.prepare(`
+      SELECT
+        strftime('%Y-%m', created_at) AS month,
+        COALESCE(SUM(total), 0) AS revenue
+      FROM invoices
+      WHERE paid = 1
+        AND created_at >= date('now', '-5 months', 'start of month')
+      GROUP BY strftime('%Y-%m', created_at)
+      ORDER BY month ASC
+    `).all() as { month: string; revenue: number }[];
+
+    // Build full 6-month array (fill missing months with 0)
+    const sixMonthsRevenue: { month: string; revenue: number }[] = [];
+    for (let i = 5; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      const label = d.toLocaleDateString('de-AT', { month: 'short', year: '2-digit' });
+      const found = sixMonthsRows.find(r => r.month === key);
+      sixMonthsRevenue.push({ month: label, revenue: found?.revenue || 0 });
+    }
+
+    // --- Query 5: Today's appointment details ---
     const todayDetails = db.prepare(`
       SELECT a.*, p.first_name || ' ' || p.last_name as patient_name
       FROM appointments a
@@ -42,16 +109,7 @@ router.get('/', (_req, res) => {
       ORDER BY a.time_start
     `).all(today);
 
-    // This month appointments
-    const thisMonthStart = today.slice(0, 7) + '-01';
-    const thisMonthAppointments = db.prepare(`
-      SELECT COUNT(*) as count FROM appointments WHERE date >= ? AND date <= ?
-    `).get(thisMonthStart, today) as { count: number };
-
-    // Upcoming this week (next 7 days including today)
-    const weekStart = new Date();
-    weekStart.setDate(weekStart.getDate() - weekStart.getDay() + 1);
-    const weekStartStr = weekStart.toISOString().slice(0, 10);
+    // --- Query 6: Upcoming this week ---
     const upcomingThisWeek = db.prepare(`
       SELECT a.*, p.first_name || ' ' || p.last_name as patient_name
       FROM appointments a
@@ -60,50 +118,18 @@ router.get('/', (_req, res) => {
       ORDER BY a.date, a.time_start
     `).all(weekStartStr, weekFromNowStr);
 
-    // Monthly revenue — this month (paid invoices)
-    const thisMonthRevenue = db.prepare(`
-      SELECT COALESCE(SUM(total), 0) as total FROM invoices
-      WHERE paid = 1 AND created_at >= ?
-    `).get(thisMonthStart) as { total: number };
-
-    // Monthly revenue — last month
-    const lastMonthDate = new Date(today);
-    lastMonthDate.setMonth(lastMonthDate.getMonth() - 1);
-    const lastMonthStart = lastMonthDate.toISOString().slice(0, 7) + '-01';
-    const lastMonthEnd = lastMonthDate.toISOString().slice(0, 7) + '-' +
-      String(new Date(lastMonthDate.getFullYear(), lastMonthDate.getMonth() + 1, 0).getDate()).padStart(2, '0');
-    const lastMonthRevenue = db.prepare(`
-      SELECT COALESCE(SUM(total), 0) as total FROM invoices
-      WHERE paid = 1 AND created_at >= ? AND created_at < ?
-    `).get(lastMonthStart, lastMonthStart.slice(0, 7) + '-' + String(new Date(lastMonthDate.getFullYear(), lastMonthDate.getMonth() + 1, 0).getDate() + 1).padStart(2, '0') + 'T00:00:00') as { total: number };
-
-    // Last 6 months revenue for chart
-    const sixMonthsRevenue: { month: string; revenue: number }[] = [];
-    for (let i = 5; i >= 0; i--) {
-      const d = new Date(today);
-      d.setMonth(d.getMonth() - i);
-      const mStart = d.toISOString().slice(0, 7) + '-01';
-      const mEnd = d.toISOString().slice(0, 7) + '-' + String(new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate()).padStart(2, '0');
-      const monthName = d.toLocaleDateString('de-AT', { month: 'short', year: '2-digit' });
-      const rev = db.prepare(`
-        SELECT COALESCE(SUM(total), 0) as total FROM invoices
-        WHERE paid = 1 AND created_at >= ? AND created_at <= ?
-      `).get(mStart, mEnd + 'T23:59:59') as { total: number };
-      sixMonthsRevenue.push({ month: monthName, revenue: rev.total });
-    }
-
     res.json({
       success: true,
       data: {
-        today_appointments: todayAppointments.count,
-        upcoming_appointments: upcomingAppointments.count,
+        today_appointments: stats.today_appointments,
+        upcoming_appointments: stats.upcoming_appointments,
         unpaid_invoices: unpaidInvoices.count,
         unpaid_invoices_total: unpaidInvoices.total || 0,
-        total_patients: totalPatients.count,
+        total_patients: stats.total_patients,
         today_details: todayDetails,
-        this_month_appointments: thisMonthAppointments.count,
-        this_month_revenue: thisMonthRevenue.total,
-        last_month_revenue: lastMonthRevenue.total,
+        this_month_appointments: stats.this_month_appointments,
+        this_month_revenue: revenue.this_month,
+        last_month_revenue: revenue.last_month,
         upcoming_this_week: upcomingThisWeek,
         six_months_revenue: sixMonthsRevenue
       }

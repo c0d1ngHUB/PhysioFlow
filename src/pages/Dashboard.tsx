@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { DashboardStats } from '../types';
+import type { Page } from '../navigation';
 
 type ExtendedStats = Omit<DashboardStats, 'today_details'> & {
   today_details: any[];
@@ -11,7 +12,11 @@ type ExtendedStats = Omit<DashboardStats, 'today_details'> & {
   six_months_revenue: { month: string; revenue: number }[];
 };
 
-export default function Dashboard() {
+interface DashboardProps {
+  onNavigate: (page: Page, modal?: string | null) => void;
+}
+
+export default function Dashboard({ onNavigate }: DashboardProps) {
   const [stats, setStats] = useState<ExtendedStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [currentTime, setCurrentTime] = useState(new Date());
@@ -29,7 +34,7 @@ export default function Dashboard() {
 
   const fetchStats = async () => {
     try {
-      const res = await fetch('/api/dashboard');
+      const res = await fetch('/api/dashboard', { credentials: 'include' });
       const data = await res.json();
       if (data.success) {
         setStats(data.data);
@@ -261,7 +266,9 @@ export default function Dashboard() {
               <div className="space-y-2 max-h-72 overflow-y-auto">
                 {stats.upcoming_this_week.map((apt: any, idx: number) => {
                   const date = new Date(apt.date + 'T00:00:00');
-                  const today = new Date().toISOString().slice(0, 10);
+                  // Use local date to avoid DST shift
+                  const d = new Date();
+                  const today = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
                   const isToday = apt.date === today;
                   return (
                     <div key={apt.id || idx} className="flex items-center gap-3 p-2.5 rounded-lg hover:bg-gray-50 transition-colors">
@@ -402,19 +409,19 @@ export default function Dashboard() {
           </div>
           <div className="p-5">
             <div className="grid grid-cols-2 gap-3">
-              <button className="flex items-center justify-center gap-2 p-4 bg-blue-50 rounded-xl border border-blue-100 hover:border-blue-400 hover:bg-blue-100 transition-all font-medium text-gray-700">
+              <button onClick={() => onNavigate('calendar', 'appointment')} className="flex items-center justify-center gap-2 p-4 bg-blue-50 rounded-xl border border-blue-100 hover:border-blue-400 hover:bg-blue-100 transition-all font-medium text-gray-700">
                 <span>📅</span>
                 <span>Neuer Termin</span>
               </button>
-              <button className="flex items-center justify-center gap-2 p-4 bg-blue-50 rounded-xl border border-blue-100 hover:border-blue-400 hover:bg-blue-100 transition-all font-medium text-gray-700">
+              <button onClick={() => onNavigate('patients', 'patient')} className="flex items-center justify-center gap-2 p-4 bg-blue-50 rounded-xl border border-blue-100 hover:border-blue-400 hover:bg-blue-100 transition-all font-medium text-gray-700">
                 <span>👤</span>
                 <span>Neuer Patient</span>
               </button>
-              <button className="flex items-center justify-center gap-2 p-4 bg-blue-50 rounded-xl border border-blue-100 hover:border-blue-400 hover:bg-blue-100 transition-all font-medium text-gray-700">
+              <button onClick={() => onNavigate('invoices', 'invoice')} className="flex items-center justify-center gap-2 p-4 bg-blue-50 rounded-xl border border-blue-100 hover:border-blue-400 hover:bg-blue-100 transition-all font-medium text-gray-700">
                 <span>📄</span>
                 <span>Neue Rechnung</span>
               </button>
-              <button className="flex items-center justify-center gap-2 p-4 bg-blue-50 rounded-xl border border-blue-100 hover:border-blue-400 hover:bg-blue-100 transition-all font-medium text-gray-700">
+              <button onClick={() => onNavigate('dashboard')} className="flex items-center justify-center gap-2 p-4 bg-blue-50 rounded-xl border border-blue-100 hover:border-blue-400 hover:bg-blue-100 transition-all font-medium text-gray-700">
                 <span>📊</span>
                 <span>Übersicht</span>
               </button>
