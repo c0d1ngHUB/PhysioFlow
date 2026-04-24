@@ -11,14 +11,7 @@ module.exports = {
         PORT: 3001,
       },
     },
-    {
-      name: 'physioflow-frontend',
-      script: 'node_modules/.bin/vite',
-      args: 'preview --port 5173 --host',
-      cwd: '/home/m3kky/PhysioFlow',
-      env: {
-        NODE_ENV: 'production',
-      },
-    },
+    // physioflow-frontend REMOVED — backend serves static files from dist/ on :3001
+    // Caddy proxies physio-flow.online → 127.0.0.1:3001
   ],
 };
