@@ -25,6 +25,17 @@ const schemaPath = path.join(__dirname, 'schema.sql');
 const schema = fs.readFileSync(schemaPath, 'utf-8');
 db.exec(schema);
 
+// Ensure new base tables exist before dependent migrations
+// (important for older DBs upgraded to multi-therapist support)
+db.exec(`
+  CREATE TABLE IF NOT EXISTS therapists (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    color TEXT NOT NULL DEFAULT '#2563EB',
+    created_at TEXT DEFAULT (datetime('now'))
+  );
+`);
+
 // Migrations: add columns if missing (safe for existing DBs)
 const columns = db.prepare("PRAGMA table_info(appointments)").all() as { name: string }[];
 if (!columns.some(col => col.name === 'status')) {
@@ -45,15 +56,6 @@ if (!invoiceColumns.some(col => col.name === 'dunning_date')) {
   db.exec("ALTER TABLE invoices ADD COLUMN dunning_date TEXT");
   console.log('✅ Migration: added dunning_date column to invoices');
 }
-
-db.exec(`
-  CREATE TABLE IF NOT EXISTS therapists (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT NOT NULL,
-    color TEXT NOT NULL DEFAULT '#2563EB',
-    created_at TEXT DEFAULT (datetime('now'))
-  );
-`);
 
 const therapistCount = db.prepare('SELECT COUNT(*) as count FROM therapists').get() as { count: number };
 if (therapistCount.count === 0) {

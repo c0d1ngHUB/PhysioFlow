@@ -62,10 +62,8 @@ CREATE TABLE IF NOT EXISTS sms_log (
 -- Indexes for better performance
 CREATE INDEX IF NOT EXISTS idx_appointments_date ON appointments(date);
 CREATE INDEX IF NOT EXISTS idx_appointments_patient ON appointments(patient_id);
-CREATE INDEX IF NOT EXISTS idx_appointments_therapist ON appointments(therapist_id);
 CREATE INDEX IF NOT EXISTS idx_invoices_patient ON invoices(patient_id);
 CREATE INDEX IF NOT EXISTS idx_invoices_paid ON invoices(paid);
-CREATE INDEX IF NOT EXISTS idx_invoices_dunning_level ON invoices(dunning_level);
 CREATE INDEX IF NOT EXISTS idx_sms_log_appointment ON sms_log(appointment_id);
 
 -- Expenses table
