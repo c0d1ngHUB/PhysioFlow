@@ -4,6 +4,7 @@ import Calendar from './pages/Calendar';
 import Patients from './pages/Patients';
 import Invoices from './pages/Invoices';
 import Expenses from './pages/Expenses';
+import Admin from './pages/Admin';
 import { AuthProvider, useAuth } from './auth.tsx';
 import { useNavigation, type Page } from './navigation';
 import { ToastContainer } from './components/ui';
@@ -58,7 +59,7 @@ function LoginPage() {
           <button
             type="submit"
             disabled={submitting}
-            className="w-full py-2 px-4 bg-primary-600 text-white font-medium rounded-lg hover:bg-primary-700 disabled:opacity-50 transition-colors"
+            className="w-full rounded-lg bg-blue-600 px-4 py-2 font-medium text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
           >
             {submitting ? 'Anmelden...' : 'Anmelden'}
           </button>
@@ -122,6 +123,7 @@ function AppContent() {
       ],
     },
     { id: 'expenses', label: 'Ausgaben', icon: '📉' },
+    { id: 'admin', label: 'Verwaltung', icon: '🧩' },
   ];
 
   return (
@@ -228,6 +230,7 @@ function AppContent() {
           {currentPage === 'patients' && <Patients initialModal={openModal} onModalConsumed={() => setOpenModal(null)} />}
           {currentPage === 'invoices' && <Invoices initialModal={openModal} onModalConsumed={() => setOpenModal(null)} />}
           {currentPage === 'expenses' && <Expenses />}
+          {currentPage === 'admin' && <Admin />}
         </main>
       </div>
 

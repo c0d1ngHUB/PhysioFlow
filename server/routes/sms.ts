@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import db from '../db/index.js';
-import { formatPhone, sendSms } from '../services/sms.js';
+import { formatPhone, getSmsProviderStatus, sendSms } from '../services/sms.js';
 
 const router = Router();
 
@@ -33,11 +33,15 @@ router.post('/send', async (req, res) => {
     res.json({ success: true, data: result });
   } catch (error) {
     console.error('SMS Error:', error);
-    res.status(500).json({ 
+    res.status(502).json({ 
       success: false, 
-      error: 'Fehler beim Senden der SMS'
+      error: (error as Error).message || 'Fehler beim Senden der SMS'
     });
   }
+});
+
+router.get('/status', (_req, res) => {
+  res.json({ success: true, data: getSmsProviderStatus() });
 });
 
 // Schedule SMS reminder for appointment (24h before)

@@ -18,6 +18,7 @@ CREATE TABLE IF NOT EXISTS patients (
 CREATE TABLE IF NOT EXISTS appointments (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     patient_id INTEGER NOT NULL,
+    therapist_id INTEGER,
     date TEXT NOT NULL,
     time_start TEXT NOT NULL,
     time_end TEXT NOT NULL,
@@ -26,7 +27,8 @@ CREATE TABLE IF NOT EXISTS appointments (
     sms_reminder INTEGER DEFAULT 0,
     status TEXT NOT NULL DEFAULT 'scheduled',
     created_at TEXT DEFAULT (datetime('now')),
-    FOREIGN KEY (patient_id) REFERENCES patients(id) ON DELETE CASCADE
+    FOREIGN KEY (patient_id) REFERENCES patients(id) ON DELETE CASCADE,
+    FOREIGN KEY (therapist_id) REFERENCES therapists(id) ON DELETE SET NULL
 );
 
 -- Invoices table
@@ -41,6 +43,8 @@ CREATE TABLE IF NOT EXISTS invoices (
     description TEXT,
     created_at TEXT DEFAULT (datetime('now')),
     paid INTEGER DEFAULT 0,
+    dunning_level INTEGER NOT NULL DEFAULT 0,
+    dunning_date TEXT,
     FOREIGN KEY (patient_id) REFERENCES patients(id) ON DELETE CASCADE,
     FOREIGN KEY (appointment_id) REFERENCES appointments(id) ON DELETE SET NULL
 );
@@ -58,8 +62,10 @@ CREATE TABLE IF NOT EXISTS sms_log (
 -- Indexes for better performance
 CREATE INDEX IF NOT EXISTS idx_appointments_date ON appointments(date);
 CREATE INDEX IF NOT EXISTS idx_appointments_patient ON appointments(patient_id);
+CREATE INDEX IF NOT EXISTS idx_appointments_therapist ON appointments(therapist_id);
 CREATE INDEX IF NOT EXISTS idx_invoices_patient ON invoices(patient_id);
 CREATE INDEX IF NOT EXISTS idx_invoices_paid ON invoices(paid);
+CREATE INDEX IF NOT EXISTS idx_invoices_dunning_level ON invoices(dunning_level);
 CREATE INDEX IF NOT EXISTS idx_sms_log_appointment ON sms_log(appointment_id);
 
 -- Expenses table
@@ -95,3 +101,29 @@ CREATE TABLE IF NOT EXISTS audit_logs (
     ip TEXT,
     success INTEGER NOT NULL
 );
+
+-- Therapists table
+CREATE TABLE IF NOT EXISTS therapists (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    color TEXT NOT NULL DEFAULT '#2563EB',
+    created_at TEXT DEFAULT (datetime('now'))
+);
+
+-- Vouchers table
+CREATE TABLE IF NOT EXISTS vouchers (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    code TEXT NOT NULL UNIQUE,
+    patient_id INTEGER,
+    description TEXT NOT NULL,
+    value REAL NOT NULL,
+    used INTEGER NOT NULL DEFAULT 0,
+    used_date TEXT,
+    expires_at TEXT,
+    created_at TEXT DEFAULT (datetime('now')),
+    FOREIGN KEY (patient_id) REFERENCES patients(id) ON DELETE SET NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_vouchers_code ON vouchers(code);
+CREATE INDEX IF NOT EXISTS idx_vouchers_patient ON vouchers(patient_id);
+CREATE INDEX IF NOT EXISTS idx_vouchers_used ON vouchers(used);

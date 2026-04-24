@@ -1,8 +1,11 @@
 // Shared SMS utilities — single source of truth for phone formatting and SMS sending
 // Used by both server/routes/sms.ts and server/services/smsScheduler.ts
 
-const SMS77_API_KEY = process.env.SMS77_API_KEY || '';
 const SMS77_URL = 'https://rest.sms77.de/api/sms';
+
+function getSmsApiKey(): string {
+  return process.env.SMS77_API_KEY?.trim() || '';
+}
 
 /**
  * Format phone number to E.164 format (Austrian default)
@@ -42,14 +45,24 @@ export interface SendSmsResult {
   simulated?: boolean;
 }
 
+export function getSmsProviderStatus() {
+  const apiKeyConfigured = Boolean(getSmsApiKey());
+  return {
+    provider: 'sms77',
+    configured: apiKeyConfigured,
+    mode: apiKeyConfigured ? 'live' : 'simulation',
+  };
+}
+
 /**
  * Send SMS via SMS77 API (POST with Authorization header).
  * If no API key is configured, simulates sending.
  */
 export async function sendSms(options: SendSmsOptions): Promise<SendSmsResult> {
   const { to, text, from = 'PhysioFlow' } = options;
+  const apiKey = getSmsApiKey();
 
-  if (!SMS77_API_KEY) {
+  if (!apiKey) {
     console.log(`📱 [SIMULATED SMS] To: ${to}, Message: ${text.substring(0, 50)}...`);
     return {
       id: 'sim_' + Date.now(),
@@ -63,7 +76,7 @@ export async function sendSms(options: SendSmsOptions): Promise<SendSmsResult> {
   const response = await fetch(SMS77_URL, {
     method: 'POST',
     headers: {
-      'Authorization': `Bearer ${SMS77_API_KEY}`,
+      'Authorization': `Bearer ${apiKey}`,
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
@@ -76,11 +89,11 @@ export async function sendSms(options: SendSmsOptions): Promise<SendSmsResult> {
   const result = await response.text();
 
   if (!response.ok) {
-    throw new Error(`SMS77 API error: ${result}`);
+    throw new Error(`SMS77-Fehler: ${result}`);
   }
 
   return {
-    id: result,
+    id: result || `sms77_${Date.now()}`,
     to,
     text,
     status: 'sent',

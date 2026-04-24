@@ -15,6 +15,8 @@ import invoicesRouter from './routes/invoices.js';
 import smsRouter from './routes/sms.js';
 import dashboardRouter from './routes/dashboard.js';
 import expensesRouter from './routes/expenses.js';
+import therapistsRouter from './routes/therapists.js';
+import vouchersRouter from './routes/vouchers.js';
 
 dotenv.config();
 
@@ -216,6 +218,8 @@ app.use('/api/invoices', invoicesRouter);
 app.use('/api/sms', smsRouter);
 app.use('/api/dashboard', dashboardRouter);
 app.use('/api/expenses', expensesRouter);
+app.use('/api/therapists', therapistsRouter);
+app.use('/api/vouchers', vouchersRouter);
 
 // ---------------------------------------------------------------------------
 // Serve static files in production

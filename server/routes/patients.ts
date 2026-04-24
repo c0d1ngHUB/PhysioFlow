@@ -26,7 +26,7 @@ router.get('/:id', (req, res) => {
   try {
     const patient = db.prepare('SELECT * FROM patients WHERE id = ?').get(req.params.id);
     if (!patient) {
-      return res.status(404).json({ success: false, error: 'Patient not found' });
+      return res.status(404).json({ success: false, error: 'Patient nicht gefunden' });
     }
     res.json({ success: true, data: patient });
   } catch (error) {

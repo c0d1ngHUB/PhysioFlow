@@ -1,7 +1,7 @@
-import { useState, useEffect } from 'react';
-import { Appointment, Patient } from '../types';
-import { Modal, showToast, ConfirmModal } from '../components/ui';
-import { getTodayStr, toLocalDateStr, addDays, addMonths } from '../utils/date';
+import { useEffect, useMemo, useState } from 'react';
+import { Appointment, Patient, Therapist } from '../types';
+import { ConfirmModal, Modal, showToast } from '../components/ui';
+import { addDays, addMonths, getTodayStr, toLocalDateStr } from '../utils/date';
 
 type ViewMode = 'day' | 'week' | 'month';
 
@@ -10,306 +10,411 @@ interface CalendarProps {
   onModalConsumed: () => void;
 }
 
+const timeSlots = Array.from({ length: 26 }, (_, index) => {
+  const hour = Math.floor(index / 2) + 7;
+  const minute = index % 2 === 0 ? '00' : '30';
+  return `${String(hour).padStart(2, '0')}:${minute}`;
+});
+
+const treatmentTypes = ['Physiotherapie', 'Massage', 'Training', 'Beratung', 'Folgekontrolle'];
+
+function getWeekStart(dateStr: string): Date {
+  const base = new Date(`${dateStr}T12:00:00`);
+  const day = base.getDay();
+  const offset = day === 0 ? -6 : 1 - day;
+  base.setDate(base.getDate() + offset);
+  return base;
+}
+
+function getWeekDays(dateStr: string): Date[] {
+  const start = getWeekStart(dateStr);
+  return Array.from({ length: 7 }, (_, index) => {
+    const date = new Date(start);
+    date.setDate(start.getDate() + index);
+    return date;
+  });
+}
+
+function getMonthGrid(dateStr: string): Array<{ date: Date; currentMonth: boolean }> {
+  const [year, month] = dateStr.slice(0, 7).split('-').map(Number);
+  const firstDay = new Date(year, month - 1, 1);
+  const startOffset = firstDay.getDay() === 0 ? 6 : firstDay.getDay() - 1;
+  const gridStart = new Date(firstDay);
+  gridStart.setDate(firstDay.getDate() - startOffset);
+
+  return Array.from({ length: 42 }, (_, index) => {
+    const date = new Date(gridStart);
+    date.setDate(gridStart.getDate() + index);
+    return { date, currentMonth: date.getMonth() === month - 1 };
+  });
+}
+
+function formatViewLabel(viewMode: ViewMode, selectedDate: string): string {
+  const date = new Date(`${selectedDate}T12:00:00`);
+
+  if (viewMode === 'month') {
+    return date.toLocaleDateString('de-AT', { month: 'long', year: 'numeric' });
+  }
+
+  if (viewMode === 'week') {
+    const weekDays = getWeekDays(selectedDate);
+    const start = weekDays[0];
+    const end = weekDays[6];
+    return `${start.toLocaleDateString('de-AT', { day: '2-digit', month: 'short' })} – ${end.toLocaleDateString('de-AT', { day: '2-digit', month: 'short', year: 'numeric' })}`;
+  }
+
+  return date.toLocaleDateString('de-AT', {
+    weekday: 'long',
+    day: '2-digit',
+    month: 'long',
+    year: 'numeric',
+  });
+}
+
 export default function Calendar({ initialModal, onModalConsumed }: CalendarProps) {
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [patients, setPatients] = useState<Patient[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [therapists, setTherapists] = useState<Therapist[]>([]);
   const [selectedDate, setSelectedDate] = useState(getTodayStr());
-  const [showModal, setShowModal] = useState(false);
-  const [showTreatmentModal, setShowTreatmentModal] = useState(false);
-  const [editingAppointment, setEditingAppointment] = useState<Appointment | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>('day');
-
-  const [confirmAction, setConfirmAction] = useState<{ onConfirm: () => void; message: string } | null>(null);
+  const [selectedTherapistId, setSelectedTherapistId] = useState<string>('all');
+  const [loading, setLoading] = useState(true);
+  const [showModal, setShowModal] = useState(false);
+  const [editingAppointment, setEditingAppointment] = useState<Appointment | null>(null);
+  const [confirmAction, setConfirmAction] = useState<{ message: string; onConfirm: () => void } | null>(null);
   const [formData, setFormData] = useState({
     patient_id: '',
+    therapist_id: '',
     date: selectedDate,
     time_start: '09:00',
-    time_end: '10:00',
-    treatment_type: 'Physiotherapie',
+    time_end: '09:50',
+    treatment_type: treatmentTypes[0],
     notes: '',
-    sms_reminder: 0
+    sms_reminder: 0 as 0 | 1 | 2 | 3,
   });
 
-  // Auto-switch to day view on small screens
   useEffect(() => {
-    const mq = window.matchMedia('(max-width: 767px)');
-    const handleChange = (e: MediaQueryListEvent | MediaQueryList) => {
-      if (e.matches && viewMode !== 'day') {
+    void Promise.all([fetchPatients(), fetchTherapists()]);
+  }, []);
+
+  useEffect(() => {
+    if (initialModal === 'appointment') {
+      openCreateModal(selectedDate);
+      onModalConsumed();
+    }
+  }, [initialModal, onModalConsumed, selectedDate]);
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia('(max-width: 767px)');
+    const applyViewportMode = (matches: boolean) => {
+      if (matches && viewMode !== 'day') {
         setViewMode('day');
       }
     };
-    handleChange(mq);
-    mq.addEventListener('change', handleChange);
-    return () => mq.removeEventListener('change', handleChange);
+
+    applyViewportMode(mediaQuery.matches);
+    const listener = (event: MediaQueryListEvent) => applyViewportMode(event.matches);
+    mediaQuery.addEventListener('change', listener);
+    return () => mediaQuery.removeEventListener('change', listener);
   }, [viewMode]);
 
-  // Handle initialModal from navigation store
   useEffect(() => {
-    if (initialModal === 'appointment') {
-      openModal();
-      onModalConsumed();
+    void fetchAppointments();
+  }, [selectedDate, viewMode, selectedTherapistId]);
+
+  async function fetchPatients() {
+    const res = await fetch('/api/patients', { credentials: 'include' });
+    const data = await res.json();
+    if (data.success) {
+      setPatients(data.data);
     }
-  }, [initialModal]); // eslint-disable-line react-hooks/exhaustive-deps
+  }
 
-  useEffect(() => {
-    fetchAppointments();
-    fetchPatients();
-  }, [selectedDate, viewMode]);
+  async function fetchTherapists() {
+    const res = await fetch('/api/therapists', { credentials: 'include' });
+    const data = await res.json();
+    if (data.success) {
+      setTherapists(data.data);
+      setFormData((current) => ({
+        ...current,
+        therapist_id: current.therapist_id || (data.data[0]?.id ? String(data.data[0].id) : ''),
+      }));
+    }
+  }
 
-  const fetchAppointments = async () => {
+  async function fetchAppointments() {
+    setLoading(true);
     try {
-      const res = await fetch(`/api/appointments?date=${selectedDate}&view=${viewMode}`, { credentials: 'include' });
-      if (res.status === 401) return;
+      const params = new URLSearchParams({ date: selectedDate, view: viewMode });
+      if (selectedTherapistId !== 'all') {
+        params.set('therapist_id', selectedTherapistId);
+      }
+
+      const res = await fetch(`/api/appointments?${params.toString()}`, { credentials: 'include' });
       const data = await res.json();
       if (data.success) {
         setAppointments(data.data);
+      } else {
+        showToast(data.error || 'Termine konnten nicht geladen werden', 'error');
       }
-    } catch (error) {
-      console.error('Failed to fetch appointments:', error);
+    } catch {
+      showToast('Termine konnten nicht geladen werden', 'error');
     } finally {
       setLoading(false);
     }
-  };
+  }
 
-  const fetchPatients = async () => {
-    try {
-      const res = await fetch('/api/patients', { credentials: 'include' });
-      if (res.status === 401) return;
-      const data = await res.json();
-      if (data.success) {
-        setPatients(data.data);
-      }
-    } catch (error) {
-      console.error('Failed to fetch patients:', error);
-    }
-  };
+  const weekDays = useMemo(() => getWeekDays(selectedDate), [selectedDate]);
+  const monthGrid = useMemo(() => getMonthGrid(selectedDate), [selectedDate]);
+  const today = getTodayStr();
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    
+  function appointmentsForDate(dateStr: string) {
+    return appointments
+      .filter((appointment) => appointment.date === dateStr && appointment.status !== 'cancelled')
+      .sort((left, right) => left.time_start.localeCompare(right.time_start));
+  }
+
+  function appointmentForSlot(dateStr: string, time: string) {
+    return appointmentsForDate(dateStr).find((appointment) => appointment.time_start <= time && appointment.time_end > time);
+  }
+
+  function openCreateModal(date: string, timeStart = '09:00') {
+    const therapistId = selectedTherapistId !== 'all' ? selectedTherapistId : therapists[0]?.id ? String(therapists[0].id) : '';
+    const [hour, minute] = timeStart.split(':').map(Number);
+    const endDate = new Date(2000, 0, 1, hour, minute + 50);
+
+    setEditingAppointment(null);
+    setFormData({
+      patient_id: patients[0]?.id ? String(patients[0].id) : '',
+      therapist_id: therapistId,
+      date,
+      time_start: timeStart,
+      time_end: `${String(endDate.getHours()).padStart(2, '0')}:${String(endDate.getMinutes()).padStart(2, '0')}`,
+      treatment_type: treatmentTypes[0],
+      notes: '',
+      sms_reminder: 0,
+    });
+    setShowModal(true);
+  }
+
+  function openEditModal(appointment: Appointment) {
+    setEditingAppointment(appointment);
+    setFormData({
+      patient_id: String(appointment.patient_id),
+      therapist_id: appointment.therapist_id ? String(appointment.therapist_id) : '',
+      date: appointment.date,
+      time_start: appointment.time_start,
+      time_end: appointment.time_end,
+      treatment_type: appointment.treatment_type,
+      notes: appointment.notes || '',
+      sms_reminder: appointment.sms_reminder,
+    });
+    setShowModal(true);
+  }
+
+  async function submitAppointment(event: React.FormEvent) {
+    event.preventDefault();
+
+    const url = editingAppointment ? `/api/appointments/${editingAppointment.id}` : '/api/appointments';
+    const method = editingAppointment ? 'PUT' : 'POST';
+    const payload = {
+      ...formData,
+      patient_id: Number(formData.patient_id),
+      therapist_id: formData.therapist_id ? Number(formData.therapist_id) : null,
+    };
+
     try {
-      const url = editingAppointment 
-        ? `/api/appointments/${editingAppointment.id}` 
-        : '/api/appointments';
-      const method = editingAppointment ? 'PUT' : 'POST';
-      
       const res = await fetch(url, {
         method,
-        headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify(formData)
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
       });
-      
       const data = await res.json();
-      if (data.success) {
-        fetchAppointments();
-        setShowModal(false);
-        showToast(editingAppointment ? 'Termin aktualisiert' : 'Termin erstellt', 'success');
-      } else {
-        showToast(data.error || 'Fehler beim Speichern', 'error');
+      if (!data.success) {
+        showToast(data.error || 'Termin konnte nicht gespeichert werden', 'error');
+        return;
       }
-    } catch (error) {
-      showToast('Fehler beim Speichern', 'error');
+
+      setShowModal(false);
+      await fetchAppointments();
+      showToast(editingAppointment ? 'Termin aktualisiert' : 'Termin erstellt', 'success');
+    } catch {
+      showToast('Termin konnte nicht gespeichert werden', 'error');
     }
-  };
+  }
 
-  const handleCancel = async (id: number) => {
-    setConfirmAction({
-      onConfirm: async () => {
-        setConfirmAction(null);
-        try {
-          const res = await fetch(`/api/appointments/${id}/cancel`, { method: 'POST', credentials: 'include' });
-          const data = await res.json();
-          if (data.success) {
-            fetchAppointments();
-            showToast('Termin abgesagt', 'success');
-          }
-        } catch (error) {
-          showToast('Fehler beim Absagen', 'error');
-        }
-      },
-      message: 'Termin absagen?',
-    });
-  };
+  async function cancelAppointment(id: number) {
+    try {
+      const res = await fetch(`/api/appointments/${id}/cancel`, { method: 'POST', credentials: 'include' });
+      const data = await res.json();
+      if (!data.success) {
+        showToast(data.error || 'Termin konnte nicht abgesagt werden', 'error');
+        return;
+      }
 
-  const openModal = (apt?: Appointment) => {
-    if (apt) {
-      setEditingAppointment(apt);
-      setFormData({
-        patient_id: String(apt.patient_id),
-        date: apt.date,
-        time_start: apt.time_start,
-        time_end: apt.time_end,
-        treatment_type: apt.treatment_type,
-        notes: apt.notes || '',
-        sms_reminder: apt.sms_reminder
-      });
-    } else {
-      setEditingAppointment(null);
-      setFormData({
-        patient_id: patients[0]?.id ? String(patients[0].id) : '',
-        date: selectedDate,
-        time_start: '09:00',
-        time_end: '10:00',
-        treatment_type: 'Physiotherapie',
-        notes: '',
-        sms_reminder: 0
-      });
+      await fetchAppointments();
+      showToast('Termin abgesagt', 'success');
+    } catch {
+      showToast('Termin konnte nicht abgesagt werden', 'error');
     }
-    setShowModal(true);
-  };
+  }
 
-  const openTreatmentModal = (apt: Appointment) => {
-    setEditingAppointment(apt);
-    setShowTreatmentModal(true);
-  };
-
-  const navigateDate = (direction: number) => {
+  function navigateDate(direction: number) {
+    if (viewMode === 'month') {
+      setSelectedDate(addMonths(selectedDate, direction));
+      return;
+    }
     if (viewMode === 'week') {
       setSelectedDate(addDays(selectedDate, direction * 7));
-    } else if (viewMode === 'month') {
-      setSelectedDate(addMonths(selectedDate, direction));
-    } else {
-      setSelectedDate(addDays(selectedDate, direction));
+      return;
     }
-  };
+    setSelectedDate(addDays(selectedDate, direction));
+  }
 
-  const goToToday = () => {
-    setSelectedDate(getTodayStr());
-  };
+  function renderAppointmentCard(appointment: Appointment, compact = false) {
+    const color = appointment.therapist_color || '#2563EB';
+    const firstName = appointment.patient_name.split(' ')[0];
 
-  const formatDate = (dateStr: string) => {
-    return new Date(dateStr + 'T12:00:00').toLocaleDateString('de-AT', {
-      weekday: 'long',
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric'
-    });
-  };
-
-  // Generate time slots from 07:00 to 20:00
-  const timeSlots = Array.from({ length: 27 }, (_, i) => {
-    const hour = Math.floor(i / 2) + 7;
-    const minutes = (i % 2) * 30;
-    return `${String(hour).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
-  });
-
-  const getAppointmentForSlot = (time: string) => {
-    return appointments.find(apt => {
-      const start = apt.time_start;
-      const end = apt.time_end;
-      return time >= start && time < end;
-    });
-  };
-
-  const getWeekStart = (dateStr: string): Date => {
-    const d = new Date(dateStr + 'T12:00:00');
-    const day = d.getDay();
-    const diff = day === 0 ? -6 : 1 - day;
-    d.setDate(d.getDate() + diff);
-    d.setHours(0, 0, 0, 0);
-    return d;
-  };
-
-  const getMonthCalendarDays = (yearMonth: string): Array<{ date: Date; isCurrentMonth: boolean }> => {
-    const [year, month] = yearMonth.split('-').map(Number);
-    const firstDay = new Date(year, month - 1, 1);
-    const lastDay = new Date(year, month, 0);
-    const startDay = firstDay.getDay();
-    const days: Array<{ date: Date; isCurrentMonth: boolean }> = [];
-    const offset = startDay === 0 ? 6 : startDay - 1;
-    for (let i = offset - 1; i >= 0; i--) {
-      const d = new Date(year, month - 1, -i);
-      days.push({ date: d, isCurrentMonth: false });
-    }
-    for (let i = 1; i <= lastDay.getDate(); i++) {
-      days.push({ date: new Date(year, month - 1, i), isCurrentMonth: true });
-    }
-    let nextDay = 1;
-    while (days.length < 42) {
-      days.push({ date: new Date(year, month, nextDay++), isCurrentMonth: false });
-    }
-    return days;
-  };
-
-  const todayStr = getTodayStr();
-
-  if (loading) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className="text-text-secondary">Laden...</div>
-      </div>
+      <button
+        type="button"
+        onClick={() => openEditModal(appointment)}
+        className={`w-full rounded-xl border border-slate-200 bg-white p-2 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md ${compact ? 'min-h-[58px]' : 'min-h-[74px]'}`}
+        style={{ borderLeft: `4px solid ${color}` }}
+      >
+        <div className="flex items-start justify-between gap-2">
+          <div className="min-w-0">
+            <p className="truncate text-sm font-semibold text-slate-900">{firstName}</p>
+            <p className="truncate text-xs text-slate-500">{appointment.treatment_type}</p>
+          </div>
+          <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-600">
+            {appointment.time_start}
+          </span>
+        </div>
+        {!compact && (
+          <div className="mt-2 flex items-center gap-2 text-[11px] text-slate-500">
+            <span>{appointment.time_start}–{appointment.time_end}</span>
+            {appointment.therapist_name && <span>• {appointment.therapist_name}</span>}
+            {appointment.sms_reminder === 1 && <span>• SMS gesendet</span>}
+            {appointment.sms_reminder === 2 && <span>• SMS geplant</span>}
+            {appointment.sms_reminder === 3 && <span className="text-red-600">• SMS fehlgeschlagen</span>}
+          </div>
+        )}
+      </button>
     );
   }
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-        <div>
-          <h2 className="text-2xl font-bold text-text-primary">Behandlungen</h2>
-          <p className="text-text-secondary">{appointments.length} Termine</p>
-        </div>
-        <div className="flex gap-2">
-          <div className="bg-white border border-gray-200 rounded-lg p-1 flex">
-            <button onClick={() => setViewMode('day')} className={`px-3 py-1 rounded ${viewMode === 'day' ? 'bg-primary text-white' : 'hover:bg-gray-100'}`}>Tag</button>
-            <button onClick={() => setViewMode('week')} className={`px-3 py-1 rounded ${viewMode === 'week' ? 'bg-primary text-white' : 'hover:bg-gray-100'} hidden md:block`}>Woche</button>
-            <button onClick={() => setViewMode('month')} className={`px-3 py-1 rounded ${viewMode === 'month' ? 'bg-primary text-white' : 'hover:bg-gray-100'} hidden md:block`}>Monat</button>
+      <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+        <div className="flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
+          <div>
+            <p className="text-sm font-medium uppercase tracking-wide text-slate-500">Kalender</p>
+            <h2 className="mt-1 text-2xl font-semibold text-slate-900">Behandlungen und Ressourcen</h2>
+            <p className="mt-2 text-sm text-slate-600">
+              {appointments.length} Termin{appointments.length === 1 ? '' : 'e'} in der aktuellen Ansicht
+            </p>
           </div>
-          <button onClick={() => openModal()} className="bg-primary text-white px-4 py-2 rounded-lg font-medium hover:bg-blue-700 transition-colors">+ Neuer Termin</button>
+
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
+            <div className="flex gap-1 rounded-xl bg-slate-100 p-1">
+              {(['day', 'week', 'month'] as ViewMode[]).map((mode) => (
+                <button
+                  key={mode}
+                  onClick={() => setViewMode(mode)}
+                  className={`rounded-lg px-4 py-2 text-sm font-medium transition ${
+                    viewMode === mode ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-600 hover:text-slate-900'
+                  } ${mode !== 'day' ? 'hidden md:block' : ''}`}
+                >
+                  {mode === 'day' ? 'Tag' : mode === 'week' ? 'Woche' : 'Monat'}
+                </button>
+              ))}
+            </div>
+
+            <select
+              value={selectedTherapistId}
+              onChange={(event) => setSelectedTherapistId(event.target.value)}
+              className="rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
+            >
+              <option value="all">Alle Therapeut:innen</option>
+              {therapists.map((therapist) => (
+                <option key={therapist.id} value={therapist.id}>
+                  {therapist.name}
+                </option>
+              ))}
+            </select>
+
+            <button
+              onClick={() => window.open('/api/appointments/ical', '_blank')}
+              className="rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-2.5 text-sm font-medium text-emerald-800 hover:bg-emerald-100"
+            >
+              iCal exportieren
+            </button>
+
+            <button onClick={() => openCreateModal(selectedDate)} className="rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-blue-700">
+              + Neuer Termin
+            </button>
+          </div>
         </div>
       </div>
 
-      {/* Date Navigation */}
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
-        <div className="flex items-center justify-between">
-          <button onClick={() => navigateDate(-1)} className="p-2 hover:bg-gray-100 rounded-lg transition-colors">←</button>
-          <div className="flex items-center gap-3">
-            <span className="font-medium text-lg">{formatDate(selectedDate)}</span>
-            {selectedDate !== todayStr && (
-              <button onClick={goToToday} className="px-3 py-1 text-sm bg-primary text-white rounded-lg hover:bg-blue-700 transition-colors">Heute</button>
-            )}
-          </div>
-          <button onClick={() => navigateDate(1)} className="p-2 hover:bg-gray-100 rounded-lg transition-colors">→</button>
+      <div className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm md:flex-row md:items-center md:justify-between">
+        <div className="flex items-center gap-2">
+          <button onClick={() => navigateDate(-1)} className="rounded-xl border border-slate-200 px-3 py-2 text-slate-600 hover:bg-slate-50">
+            ←
+          </button>
+          <button onClick={() => setSelectedDate(today)} className="rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
+            Heute
+          </button>
+          <button onClick={() => navigateDate(1)} className="rounded-xl border border-slate-200 px-3 py-2 text-slate-600 hover:bg-slate-50">
+            →
+          </button>
         </div>
+        <p className="text-lg font-semibold text-slate-900">{formatViewLabel(viewMode, selectedDate)}</p>
       </div>
 
-      {/* Day View */}
-      {viewMode === 'day' && (
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
-          <div className="divide-y divide-gray-200">
+      {loading ? (
+        <div className="flex min-h-[45vh] items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-500 shadow-sm">
+          Kalender wird geladen…
+        </div>
+      ) : null}
+
+      {!loading && viewMode === 'day' && (
+        <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+          <div className="grid grid-cols-[88px_1fr] border-b border-slate-200 bg-slate-50 px-4 py-3">
+            <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Zeit</span>
+            <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Terminplan</span>
+          </div>
+          <div className="divide-y divide-slate-100">
             {timeSlots.map((time) => {
-              const apt = getAppointmentForSlot(time);
-              const isStart = apt?.time_start === time;
+              const appointment = appointmentForSlot(selectedDate, time);
+              const isStart = appointment?.time_start === time;
               return (
-                <div key={time} className="flex min-h-[60px]">
-                  <div className="w-20 flex-shrink-0 border-r border-gray-200 bg-gray-50 p-2 text-right">
-                    <span className="font-mono text-sm text-text-secondary">{time}</span>
-                  </div>
-                  <div className="flex-1 p-2">
-                    {apt ? (
-                      isStart ? (
-                        <div className="border-l-4 border-primary bg-blue-50 p-3 rounded-r-lg">
-                          <div className="flex justify-between items-start">
-                            <div>
-                              <p className="font-medium text-text-primary">{apt.patient_name}</p>
-                              <p className="text-sm text-text-secondary">{apt.treatment_type}</p>
-                              {apt.notes && <p className="text-xs text-text-secondary mt-1">{apt.notes}</p>}
-                            </div>
-                            <div className="flex items-center gap-2">
-                              <span className="font-mono text-sm text-primary">{apt.time_start} - {apt.time_end}</span>
-                              {apt.sms_reminder === 1 && <span className="text-green-500" title="SMS aktiv">✓</span>}
-                              <button onClick={() => openTreatmentModal(apt)} className="px-3 py-1 bg-primary text-white text-sm rounded hover:bg-blue-700">Behandeln</button>
-                              <button onClick={() => openModal(apt)} className="p-1 hover:bg-gray-200 rounded">✏️</button>
-                              <button onClick={() => setConfirmAction({ onConfirm: () => handleCancel(apt.id!), message: 'Absagen?' })} className="p-1 hover:bg-red-100 text-red-500 rounded">×</button>
-                            </div>
-                          </div>
-                        </div>
-                      ) : null
-                    ) : (
-                      <button onClick={() => { setFormData({ ...formData, date: selectedDate, time_start: time }); openModal(); }} className="w-full h-full min-h-[44px] border-2 border-dashed border-gray-200 rounded-lg hover:border-primary/50 hover:bg-blue-50 transition-colors text-text-secondary hover:text-primary text-left px-2">+ Termin</button>
-                    )}
+                <div key={time} className="grid grid-cols-[88px_1fr]">
+                  <div className="border-r border-slate-100 bg-slate-50 px-4 py-3 text-right font-mono text-sm text-slate-500">{time}</div>
+                  <div className="min-h-[76px] p-2">
+                    {appointment && isStart ? (
+                      <div className="flex items-start gap-2">
+                        <div className="flex-1">{renderAppointmentCard(appointment)}</div>
+                        <button onClick={() => openEditModal(appointment)} className="rounded-lg bg-slate-100 px-3 py-2 text-sm text-slate-600 hover:bg-slate-200">
+                          Bearbeiten
+                        </button>
+                        <button
+                          onClick={() => setConfirmAction({ message: 'Termin wirklich absagen?', onConfirm: () => void cancelAppointment(appointment.id!) })}
+                          className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700 hover:bg-red-100"
+                        >
+                          Absagen
+                        </button>
+                      </div>
+                    ) : !appointment ? (
+                      <button
+                        onClick={() => openCreateModal(selectedDate, time)}
+                        className="flex h-full min-h-[60px] w-full items-center justify-center rounded-xl border border-dashed border-slate-300 text-sm font-medium text-slate-500 transition hover:border-blue-400 hover:bg-blue-50 hover:text-blue-700"
+                      >
+                        + Termin um {time}
+                      </button>
+                    ) : null}
                   </div>
                 </div>
               );
@@ -318,194 +423,245 @@ export default function Calendar({ initialModal, onModalConsumed }: CalendarProp
         </div>
       )}
 
-      {/* Week View */}
-      {viewMode === 'week' && (
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-auto">
-          <div className="min-w-[800px]">
-            <div className="grid grid-cols-8 border-b border-gray-200 bg-gray-50">
-              <div className="p-2 border-r border-gray-200 w-20">Zeit</div>
-              {Array.from({ length: 7 }, (_, i) => {
-                const weekStart = getWeekStart(selectedDate);
-                weekStart.setDate(weekStart.getDate() + i);
-                const dateStr = toLocalDateStr(weekStart);
-                const isToday = dateStr === todayStr;
+      {!loading && viewMode === 'week' && (
+        <div className="overflow-auto rounded-2xl border border-slate-200 bg-white shadow-sm">
+          <div className="min-w-[1100px]">
+            <div className="grid grid-cols-[88px_repeat(7,minmax(0,1fr))] border-b border-slate-200 bg-slate-50">
+              <div className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Zeit</div>
+              {weekDays.map((day) => {
+                const dateStr = toLocalDateStr(day);
+                const isToday = dateStr === today;
                 return (
-                  <div key={i} className={`p-2 border-r border-gray-200 text-center ${isToday ? 'bg-blue-100' : ''}`}>
-                    <div className="font-medium">{weekStart.toLocaleDateString('de-AT', { weekday: 'short' })}</div>
-                    <div className={`text-sm ${isToday ? 'text-primary font-bold' : 'text-text-secondary'}`}>{weekStart.toLocaleDateString('de-AT', { day: '2-digit', month: '2-digit' })}</div>
+                  <div key={dateStr} className={`border-l border-slate-200 px-4 py-3 ${isToday ? 'bg-blue-50' : ''}`}>
+                    <p className="text-sm font-semibold text-slate-900">{day.toLocaleDateString('de-AT', { weekday: 'long' })}</p>
+                    <p className={`text-sm ${isToday ? 'font-semibold text-blue-700' : 'text-slate-500'}`}>
+                      {day.toLocaleDateString('de-AT', { day: '2-digit', month: '2-digit' })}
+                    </p>
                   </div>
                 );
               })}
             </div>
-            {timeSlots.slice(0, 20).map((time) => (
-              <div key={time} className="grid grid-cols-8 border-b border-gray-100">
-                <div className="p-2 border-r border-gray-200 w-20 text-right font-mono text-sm text-text-secondary">{time}</div>
-                {Array.from({ length: 7 }, (_, i) => {
-                  const weekStart = getWeekStart(selectedDate);
-                  weekStart.setDate(weekStart.getDate() + i);
-                  const dateStr = toLocalDateStr(weekStart);
-                  const aptOnDay = appointments.find(apt => apt.date === dateStr && time >= apt.time_start && time < apt.time_end);
-                  return (
-                    <div key={i} className="p-1 border-r border-gray-200 min-h-[40px]">
-                      {aptOnDay ? (
-                        <div className="bg-blue-50 border-l-2 border-primary p-1 rounded text-xs cursor-pointer hover:bg-blue-100" onClick={() => openModal(aptOnDay)}>
-                          <div className="font-medium truncate">{aptOnDay.patient_name || 'Patient'}</div>
-                          <div className="text-text-secondary truncate">{aptOnDay.treatment_type}</div>
-                          <div className="text-xs text-primary">{aptOnDay.time_start}-{aptOnDay.time_end}</div>
-                        </div>
-                      ) : (
-                        <button onClick={() => { setFormData({ ...formData, date: dateStr, time_start: time }); openModal(); }} className="w-full h-full text-gray-300 hover:text-primary text-lg">+</button>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            ))}
+
+            <div className="divide-y divide-slate-100">
+              {timeSlots.map((time) => (
+                <div key={time} className="grid grid-cols-[88px_repeat(7,minmax(0,1fr))]">
+                  <div className="bg-slate-50 px-4 py-3 text-right font-mono text-sm text-slate-500">{time}</div>
+                  {weekDays.map((day) => {
+                    const dateStr = toLocalDateStr(day);
+                    const appointment = appointmentForSlot(dateStr, time);
+                    const isStart = appointment?.time_start === time;
+                    return (
+                      <div key={`${dateStr}-${time}`} className="min-h-[78px] border-l border-slate-100 p-2">
+                        {appointment && isStart ? (
+                          renderAppointmentCard(appointment, true)
+                        ) : !appointment ? (
+                          <button
+                            onClick={() => openCreateModal(dateStr, time)}
+                            className="flex h-full min-h-[60px] w-full items-center justify-center rounded-xl border border-dashed border-transparent text-slate-300 transition hover:border-blue-300 hover:bg-blue-50 hover:text-blue-600"
+                          >
+                            +
+                          </button>
+                        ) : null}
+                      </div>
+                    );
+                  })}
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       )}
 
-      {/* Month View */}
-      {viewMode === 'month' && (() => {
-        const yearMonth = selectedDate.slice(0, 7);
-        const calendarDays = getMonthCalendarDays(yearMonth);
-        return (
-          <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-auto">
-            <div className="min-w-[1000px]">
-              <div className="grid grid-cols-7 border-b border-gray-200 bg-gray-50">
-                {['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'].map(day => (
-                  <div key={day} className="p-2 border-r border-gray-200 font-medium text-center">{day}</div>
-                ))}
-              </div>
-              <div className="grid grid-cols-7">
-                {calendarDays.map(({ date, isCurrentMonth }, i) => {
-                  const dateStr = toLocalDateStr(date);
-                  const dayApts = appointments.filter(a => a.date === dateStr);
-                  const isToday = dateStr === todayStr;
-                  return (
-                    <div key={i} className={`border-r border-b border-gray-200 p-1 min-h-[100px] ${!isCurrentMonth ? 'bg-gray-100' : ''}`}>
-                      <div className={`text-right text-sm mb-1 ${isToday ? 'font-bold text-primary bg-blue-200 rounded-full w-6 h-6 flex items-center justify-center ml-auto' : isCurrentMonth ? 'text-text-primary' : 'text-gray-400'}`}>{date.getDate()}</div>
-                      <div className="space-y-1">
-                        {dayApts.slice(0, 3).map(apt => (
-                          <div key={apt.id} className={`border-l-2 px-1 py-0.5 rounded text-xs cursor-pointer hover:opacity-80 truncate ${isCurrentMonth ? 'bg-blue-100 border-primary' : 'bg-gray-200 border-gray-400'}`} onClick={() => openModal(apt)} title={`${apt.time_start}-${apt.time_end} | ${apt.patient_name} | ${apt.treatment_type}`}>
-                            <span className="font-medium">{apt.time_start}</span>{' '}
-                            <span className="truncate">{apt.patient_name?.split(' ')[1] || apt.patient_name}</span>
-                            <span className="block text-[10px] text-text-secondary truncate">{apt.treatment_type}</span>
-                          </div>
-                        ))}
-                        {dayApts.length > 3 && <div className="text-xs text-text-secondary text-center">+{dayApts.length - 3} mehr</div>}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
+      {!loading && viewMode === 'month' && (
+        <div className="overflow-auto rounded-2xl border border-slate-200 bg-white shadow-sm">
+          <div className="min-w-[1100px]">
+            <div className="grid grid-cols-7 border-b border-slate-200 bg-slate-50">
+              {['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'].map((label) => (
+                <div key={label} className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  {label}
+                </div>
+              ))}
             </div>
-          </div>
-        );
-      })()}
 
-      {/* New/Edit Appointment Modal — using unified Modal */}
-      <Modal isOpen={showModal} onClose={() => setShowModal(false)} title={editingAppointment ? 'Termin bearbeiten' : 'Neuer Termin'} size="md">
-        <form id="appointment-form" onSubmit={handleSubmit} className="p-6 space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-text-primary mb-1">Patient *</label>
-            <select required value={formData.patient_id} onChange={(e) => setFormData({ ...formData, patient_id: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary">
-              <option value="">Patient auswählen...</option>
-              {patients.map(p => <option key={p.id} value={p.id}>{p.first_name} {p.last_name}</option>)}
-            </select>
+            <div className="grid grid-cols-7">
+              {monthGrid.map(({ date, currentMonth }) => {
+                const dateStr = toLocalDateStr(date);
+                const dayAppointments = appointmentsForDate(dateStr);
+                const isToday = dateStr === today;
+
+                return (
+                  <div key={dateStr} className={`min-h-[150px] border-b border-r border-slate-100 p-3 ${currentMonth ? 'bg-white' : 'bg-slate-50/80'}`}>
+                    <div className="mb-2 flex items-center justify-between">
+                      <button
+                        onClick={() => openCreateModal(dateStr)}
+                        className={`flex h-8 w-8 items-center justify-center rounded-full text-sm font-semibold ${
+                          isToday ? 'bg-blue-600 text-white' : currentMonth ? 'text-slate-700 hover:bg-slate-100' : 'text-slate-400'
+                        }`}
+                      >
+                        {date.getDate()}
+                      </button>
+                      <button onClick={() => openCreateModal(dateStr)} className="rounded-lg px-2 py-1 text-xs font-medium text-slate-400 hover:bg-slate-100 hover:text-blue-600">
+                        +
+                      </button>
+                    </div>
+
+                    <div className="space-y-2">
+                      {dayAppointments.slice(0, 3).map((appointment) => (
+                        <div key={appointment.id}>
+                          {renderAppointmentCard(appointment, true)}
+                        </div>
+                      ))}
+                      {dayAppointments.length > 3 && (
+                        <p className="px-2 text-xs font-medium text-slate-500">+ {dayAppointments.length - 3} weitere Termine</p>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           </div>
-          <div className="grid grid-cols-2 gap-4">
+        </div>
+      )}
+
+      <Modal isOpen={showModal} onClose={() => setShowModal(false)} title={editingAppointment ? 'Termin bearbeiten' : 'Termin anlegen'} size="lg">
+        <form onSubmit={submitAppointment} className="space-y-5 p-6">
+          <div className="grid gap-4 md:grid-cols-2">
             <div>
-              <label className="block text-sm font-medium text-text-primary mb-1">Datum *</label>
-              <input type="date" required value={formData.date} onChange={(e) => setFormData({ ...formData, date: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary" />
+              <label className="mb-1 block text-sm font-medium text-slate-700">Patient/in</label>
+              <select
+                required
+                value={formData.patient_id}
+                onChange={(event) => setFormData((current) => ({ ...current, patient_id: event.target.value }))}
+                className="w-full rounded-xl border border-slate-300 px-3 py-2.5 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
+              >
+                <option value="">Bitte wählen…</option>
+                {patients.map((patient) => (
+                  <option key={patient.id} value={patient.id}>
+                    {patient.first_name} {patient.last_name}
+                  </option>
+                ))}
+              </select>
             </div>
             <div>
-              <label className="block text-sm font-medium text-text-primary mb-1">Behandlungsart</label>
-              <select value={formData.treatment_type} onChange={(e) => setFormData({ ...formData, treatment_type: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary">
-                <option value="Physiotherapie">Physiotherapie</option>
-                <option value="Massage">Massage</option>
-                <option value="Training">Training</option>
-                <option value="Beratung">Beratung</option>
-                <option value="Folgekontrolle">Folgekontrolle</option>
+              <label className="mb-1 block text-sm font-medium text-slate-700">Therapeut/in</label>
+              <select
+                value={formData.therapist_id}
+                onChange={(event) => setFormData((current) => ({ ...current, therapist_id: event.target.value }))}
+                className="w-full rounded-xl border border-slate-300 px-3 py-2.5 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
+              >
+                <option value="">Nicht zugeordnet</option>
+                {therapists.map((therapist) => (
+                  <option key={therapist.id} value={therapist.id}>
+                    {therapist.name}
+                  </option>
+                ))}
               </select>
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-4">
+
+          <div className="grid gap-4 md:grid-cols-3">
             <div>
-              <label className="block text-sm font-medium text-text-primary mb-1">Von *</label>
-              <input type="time" required value={formData.time_start} onChange={(e) => setFormData({ ...formData, time_start: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary font-mono" />
+              <label className="mb-1 block text-sm font-medium text-slate-700">Datum</label>
+              <input
+                type="date"
+                required
+                value={formData.date}
+                onChange={(event) => setFormData((current) => ({ ...current, date: event.target.value }))}
+                className="w-full rounded-xl border border-slate-300 px-3 py-2.5 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
+              />
             </div>
             <div>
-              <label className="block text-sm font-medium text-text-primary mb-1">Bis *</label>
-              <input type="time" required value={formData.time_end} onChange={(e) => setFormData({ ...formData, time_end: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary font-mono" />
+              <label className="mb-1 block text-sm font-medium text-slate-700">Von</label>
+              <input
+                type="time"
+                required
+                value={formData.time_start}
+                onChange={(event) => setFormData((current) => ({ ...current, time_start: event.target.value }))}
+                className="w-full rounded-xl border border-slate-300 px-3 py-2.5 font-mono focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-sm font-medium text-slate-700">Bis</label>
+              <input
+                type="time"
+                required
+                value={formData.time_end}
+                onChange={(event) => setFormData((current) => ({ ...current, time_end: event.target.value }))}
+                className="w-full rounded-xl border border-slate-300 px-3 py-2.5 font-mono focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
+              />
             </div>
           </div>
-          <div>
-            <label className="block text-sm font-medium text-text-primary mb-1">Erinnerung</label>
-            <select value={formData.sms_reminder} onChange={(e) => setFormData({ ...formData, sms_reminder: parseInt(e.target.value) })} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary">
-              <option value="0">Keine</option>
-              <option value="1">SMS (24h vorher)</option>
-              <option value="2">SMS + Email</option>
-            </select>
+
+          <div className="grid gap-4 md:grid-cols-2">
+            <div>
+              <label className="mb-1 block text-sm font-medium text-slate-700">Behandlungsart</label>
+              <select
+                value={formData.treatment_type}
+                onChange={(event) => setFormData((current) => ({ ...current, treatment_type: event.target.value }))}
+                className="w-full rounded-xl border border-slate-300 px-3 py-2.5 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
+              >
+                {treatmentTypes.map((type) => (
+                  <option key={type} value={type}>
+                    {type}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="mb-1 block text-sm font-medium text-slate-700">SMS-Reminder</label>
+              <select
+                value={formData.sms_reminder}
+                onChange={(event) => setFormData((current) => ({ ...current, sms_reminder: Number(event.target.value) as 0 | 1 | 2 | 3 }))}
+                className="w-full rounded-xl border border-slate-300 px-3 py-2.5 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
+              >
+                <option value={0}>Keine Erinnerung</option>
+                <option value={2}>Automatisch planen</option>
+                <option value={1}>Bereits versendet</option>
+              </select>
+            </div>
           </div>
+
           <div>
-            <label className="block text-sm font-medium text-text-primary mb-1">Notizen</label>
-            <textarea value={formData.notes} onChange={(e) => setFormData({ ...formData, notes: e.target.value })} rows={3} placeholder="Organisatorisches, Besonderheiten..." className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary" />
+            <label className="mb-1 block text-sm font-medium text-slate-700">Notizen</label>
+            <textarea
+              value={formData.notes}
+              onChange={(event) => setFormData((current) => ({ ...current, notes: event.target.value }))}
+              rows={4}
+              className="w-full rounded-xl border border-slate-300 px-3 py-2.5 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
+              placeholder="Hinweise zur Behandlung, Raum, interne Notizen …"
+            />
           </div>
-          <div className="flex gap-3 pt-4 border-t border-gray-200">
-            <button type="button" onClick={() => setShowModal(false)} className="flex-1 px-4 py-2 border border-gray-300 rounded-lg font-medium hover:bg-gray-50">Abbrechen</button>
-            <button type="submit" className="flex-1 px-4 py-2 bg-primary text-white rounded-lg font-medium hover:bg-blue-700">{editingAppointment ? 'Speichern' : 'Erstellen'}</button>
+
+          <div className="flex justify-end gap-3 border-t border-slate-200 pt-4">
+            {editingAppointment?.id ? (
+              <button
+                type="button"
+                onClick={() => setConfirmAction({ message: 'Termin wirklich absagen?', onConfirm: () => void cancelAppointment(editingAppointment.id!) })}
+                className="rounded-xl bg-red-50 px-4 py-2 text-sm font-medium text-red-700 hover:bg-red-100"
+              >
+                Absagen
+              </button>
+            ) : null}
+            <button type="button" onClick={() => setShowModal(false)} className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
+              Abbrechen
+            </button>
+            <button type="submit" className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700">
+              {editingAppointment ? 'Speichern' : 'Erstellen'}
+            </button>
           </div>
         </form>
       </Modal>
 
-      {/* Treatment Modal — using unified Modal */}
-      <Modal isOpen={showTreatmentModal && !!editingAppointment} onClose={() => setShowTreatmentModal(false)} title={editingAppointment ? `Behandlung: ${editingAppointment.patient_name}` : 'Behandlung'} size="xl">
-        {editingAppointment && (
-          <div className="p-6 space-y-6">
-            <p className="text-sm text-text-secondary">{editingAppointment.date} | {editingAppointment.time_start} - {editingAppointment.time_end} | {editingAppointment.treatment_type}</p>
-            <div className="border-b border-gray-200">
-              <nav className="flex gap-4">
-                <button className="pb-2 border-b-2 border-primary font-medium text-primary">Behandlung</button>
-                <button className="pb-2 border-b-2 border-transparent hover:border-gray-300">Dokumente</button>
-                <button className="pb-2 border-b-2 border-transparent hover:border-gray-300">Finanzen</button>
-              </nav>
-            </div>
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-text-primary mb-1">Behandlungsverlauf</label>
-                <textarea rows={4} placeholder="Behandlung dokumentieren..." className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary" />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-text-primary mb-1">Leistungen</label>
-                <div className="border border-gray-200 rounded-lg p-3 space-y-2">
-                  <div className="flex justify-between items-center"><span>Manuelle Therapie (MT)</span><input type="checkbox" className="rounded" /></div>
-                  <div className="flex justify-between items-center"><span>Krankengymnastik (KG)</span><input type="checkbox" className="rounded" /></div>
-                  <div className="flex justify-between items-center"><span>MLD</span><input type="checkbox" className="rounded" /></div>
-                </div>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-text-primary mb-1">Nächster Termin</label>
-                <div className="flex gap-2">
-                  <input type="date" className="flex-1 px-3 py-2 border border-gray-300 rounded-lg" />
-                  <button className="px-4 py-2 bg-primary text-white rounded-lg hover:bg-blue-700">+ Termin</button>
-                </div>
-              </div>
-            </div>
-            <div className="flex gap-3 pt-4 border-t border-gray-200">
-              <button onClick={() => setShowTreatmentModal(false)} className="flex-1 px-4 py-2 border border-gray-300 rounded-lg font-medium hover:bg-gray-50">Schließen</button>
-              <button onClick={() => { showToast('Behandlung gespeichert!', 'success'); setShowTreatmentModal(false); }} className="flex-1 px-4 py-2 bg-primary text-white rounded-lg font-medium hover:bg-blue-700">Speichern</button>
-            </div>
-          </div>
-        )}
-      </Modal>
       <ConfirmModal
-        open={!!confirmAction}
-        onConfirm={confirmAction?.onConfirm ?? (() => {})}
-        onCancel={() => setConfirmAction(null)}
+        open={Boolean(confirmAction)}
         message={confirmAction?.message ?? ''}
-        variant="danger"
-        confirmText="Absagen"
+        onCancel={() => setConfirmAction(null)}
+        onConfirm={() => {
+          const action = confirmAction?.onConfirm;
+          setConfirmAction(null);
+          action?.();
+        }}
+        confirmText="Bestätigen"
       />
     </div>
   );

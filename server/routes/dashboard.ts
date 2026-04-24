@@ -5,7 +5,7 @@ const router = Router();
 
 /**
  * Get today's date string in YYYY-MM-DD without timezone pitfalls.
- * Uses UTC to avoid DST shifts that new Date().toISOString() can cause.
+ * Uses local time without UTC conversion to avoid DST shifts.
  */
 function todayStr(): string {
   const d = new Date();
@@ -53,10 +53,10 @@ router.get('/', (_req, res) => {
     // --- Query 1: Aggregate counts in a single query ---
     const stats = db.prepare(`
       SELECT
-        (SELECT COUNT(*) FROM appointments WHERE date = ?) AS today_appointments,
-        (SELECT COUNT(*) FROM appointments WHERE date >= ? AND date <= ? AND date != ?) AS upcoming_appointments,
+        (SELECT COUNT(*) FROM appointments WHERE date = ? AND status != 'cancelled') AS today_appointments,
+        (SELECT COUNT(*) FROM appointments WHERE date >= ? AND date <= ? AND date != ? AND status != 'cancelled') AS upcoming_appointments,
         (SELECT COUNT(*) FROM patients) AS total_patients,
-        (SELECT COUNT(*) FROM appointments WHERE date >= ? AND date <= ?) AS this_month_appointments
+        (SELECT COUNT(*) FROM appointments WHERE date >= ? AND date <= ? AND status != 'cancelled') AS this_month_appointments
     `).get(today, today, weekFromNowStr, today, thisMonthStart, today) as {
       today_appointments: number;
       upcoming_appointments: number;
@@ -106,6 +106,7 @@ router.get('/', (_req, res) => {
       FROM appointments a
       JOIN patients p ON a.patient_id = p.id
       WHERE a.date = ?
+        AND a.status != 'cancelled'
       ORDER BY a.time_start
     `).all(today);
 
@@ -115,6 +116,7 @@ router.get('/', (_req, res) => {
       FROM appointments a
       JOIN patients p ON a.patient_id = p.id
       WHERE a.date >= ? AND a.date <= ?
+        AND a.status != 'cancelled'
       ORDER BY a.date, a.time_start
     `).all(weekStartStr, weekFromNowStr);
 

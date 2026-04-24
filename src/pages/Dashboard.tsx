@@ -3,12 +3,12 @@ import { DashboardStats } from '../types';
 import type { Page } from '../navigation';
 
 type ExtendedStats = Omit<DashboardStats, 'today_details'> & {
-  today_details: any[];
+  today_details: Array<{ id: number; time_start: string; time_end: string; patient_name: string; treatment_type: string; sms_reminder: number }>;
   unpaid_invoices_total: number;
   this_month_appointments: number;
   this_month_revenue: number;
   last_month_revenue: number;
-  upcoming_this_week: any[];
+  upcoming_this_week: Array<{ id: number; date: string; time_start: string; patient_name: string; treatment_type: string }>;
   six_months_revenue: { month: string; revenue: number }[];
 };
 
@@ -218,7 +218,7 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
           <div className="p-5">
             {stats?.today_details && stats.today_details.length > 0 ? (
               <div className="space-y-3">
-                {stats.today_details.map((apt: any) => (
+                {stats.today_details.map((apt) => (
                   <div
                     key={apt.id}
                     className="flex items-center gap-4 p-3 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors cursor-pointer border-l-4 border-blue-500"

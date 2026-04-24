@@ -3,7 +3,6 @@ import db from '../db/index.js';
 import { formatPhone, sendSms } from './sms.js';
 
 interface ScheduledSMS {
-  id: number;
   appointment_id: number;
   patient_name: string;
   patient_phone: string;
@@ -29,11 +28,12 @@ export async function processScheduledSMS(): Promise<{ sent: number; failed: num
     FROM appointments a
     JOIN patients p ON a.patient_id = p.id
     WHERE a.sms_reminder = 2
-      AND a.date || 'T' || a.time_start > datetime('now')
-      AND a.date || 'T' || a.time_start <= datetime('now', '+24 hours')
+      AND datetime(a.date || ' ' || a.time_start) > datetime('now')
+      AND datetime(a.date || ' ' || a.time_start) <= datetime('now', '+24 hours')
+      AND datetime(a.date || ' ' || a.time_start) >= datetime('now', '+23 hours')
       AND p.phone IS NOT NULL
       AND p.phone != ''
-    ORDER BY a.date || 'T' || a.time_start ASC
+    ORDER BY datetime(a.date || ' ' || a.time_start) ASC
   `).all() as ScheduledSMS[];
   
   console.log(`[SMS Scheduler] Found ${scheduledSMS.length} scheduled reminders to process`);
@@ -49,16 +49,22 @@ export async function processScheduledSMS(): Promise<{ sent: number; failed: num
       
       // Mark as sent
       db.prepare('UPDATE appointments SET sms_reminder = 1 WHERE id = ?').run(sms.appointment_id);
-      db.prepare('UPDATE sms_log SET status = ?, sent_at = datetime("now") WHERE appointment_id = ? AND status = "scheduled"')
-        .run('sent', sms.appointment_id);
+      db.prepare(`
+        UPDATE sms_log
+        SET status = ?, sent_at = datetime('now'), message = ?
+        WHERE appointment_id = ? AND status = 'scheduled'
+      `).run('sent', `Erfolgreich versendet an ${phone}`, sms.appointment_id);
     } catch (error) {
       result.failed++;
       console.error(`[SMS Scheduler] Failed to send to ${sms.patient_name}:`, error);
       
       // Mark as failed
       db.prepare('UPDATE appointments SET sms_reminder = 3 WHERE id = ?').run(sms.appointment_id);
-      db.prepare('UPDATE sms_log SET status = ? WHERE appointment_id = ? AND status = "scheduled"')
-        .run('failed', sms.appointment_id);
+      db.prepare(`
+        UPDATE sms_log
+        SET status = ?, sent_at = datetime('now'), message = ?
+        WHERE appointment_id = ? AND status = 'scheduled'
+      `).run('failed', (error as Error).message, sms.appointment_id);
     }
   }
   

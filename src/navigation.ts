@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 
-export type Page = 'dashboard' | 'calendar' | 'patients' | 'invoices' | 'expenses';
+export type Page = 'dashboard' | 'calendar' | 'patients' | 'invoices' | 'expenses' | 'admin';
 
 interface NavigationState {
   currentPage: Page;

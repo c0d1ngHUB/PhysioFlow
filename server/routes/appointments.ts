@@ -3,14 +3,40 @@ import db from '../db/index.js';
 
 const router = Router();
 
+function toDateOnlyString(value: string): string {
+  const date = new Date(`${value}T12:00:00`);
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function buildIcsDateTime(date: string, time: string): string {
+  return `${date.replaceAll('-', '')}T${time.replaceAll(':', '')}00`;
+}
+
+function escapeIcs(value: string): string {
+  return value
+    .replace(/\\/g, '\\\\')
+    .replace(/\n/g, '\\n')
+    .replace(/,/g, '\\,')
+    .replace(/;/g, '\\;');
+}
+
 // Get all appointments (with optional date/week/month filter)
 router.get('/', (req, res) => {
-  const { date, patient_id, view } = req.query;
+  const { date, patient_id, therapist_id, view } = req.query;
 
   let query = `
-    SELECT a.*, p.first_name || ' ' || p.last_name as patient_name, p.phone as patient_phone
+    SELECT
+      a.*,
+      p.first_name || ' ' || p.last_name as patient_name,
+      p.phone as patient_phone,
+      t.name as therapist_name,
+      t.color as therapist_color
     FROM appointments a
     JOIN patients p ON a.patient_id = p.id
+    LEFT JOIN therapists t ON a.therapist_id = t.id
     WHERE 1=1
   `;
   const params: any[] = [];
@@ -49,6 +75,11 @@ router.get('/', (req, res) => {
     query += ' AND a.patient_id = ?';
     params.push(patient_id);
   }
+
+  if (therapist_id) {
+    query += ' AND a.therapist_id = ?';
+    params.push(therapist_id);
+  }
   
   query += ' ORDER BY a.date, a.time_start';
   
@@ -60,13 +91,79 @@ router.get('/', (req, res) => {
   }
 });
 
+router.get('/ical', (_req, res) => {
+  try {
+    const appointments = db.prepare(`
+      SELECT
+        a.*,
+        p.first_name || ' ' || p.last_name AS patient_name,
+        t.name AS therapist_name
+      FROM appointments a
+      JOIN patients p ON a.patient_id = p.id
+      LEFT JOIN therapists t ON a.therapist_id = t.id
+      WHERE a.status != 'cancelled'
+        AND a.date >= date('now')
+      ORDER BY a.date ASC, a.time_start ASC
+    `).all() as Array<{
+      id: number;
+      date: string;
+      time_start: string;
+      time_end: string;
+      treatment_type: string;
+      notes: string | null;
+      patient_name: string;
+      therapist_name: string | null;
+    }>;
+
+    const lines = [
+      'BEGIN:VCALENDAR',
+      'VERSION:2.0',
+      'PRODID:-//PhysioFlow//Kalender//DE',
+      'CALSCALE:GREGORIAN',
+      'METHOD:PUBLISH',
+      ...appointments.flatMap((appointment) => {
+        const description = [
+          `Patient/in: ${appointment.patient_name}`,
+          `Behandlung: ${appointment.treatment_type}`,
+          appointment.therapist_name ? `Therapeut/in: ${appointment.therapist_name}` : null,
+          appointment.notes ? `Notizen: ${appointment.notes}` : null,
+        ].filter(Boolean).join('\n');
+
+        return [
+          'BEGIN:VEVENT',
+          `UID:appointment-${appointment.id}@physioflow.local`,
+          `DTSTAMP:${new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d{3}Z$/, 'Z')}`,
+          `DTSTART:${buildIcsDateTime(appointment.date, appointment.time_start)}`,
+          `DTEND:${buildIcsDateTime(appointment.date, appointment.time_end)}`,
+          `SUMMARY:${escapeIcs(`${appointment.patient_name} - ${appointment.treatment_type}`)}`,
+          `DESCRIPTION:${escapeIcs(description)}`,
+          'END:VEVENT',
+        ];
+      }),
+      'END:VCALENDAR',
+    ];
+
+    res.setHeader('Content-Type', 'text/calendar; charset=utf-8');
+    res.setHeader('Content-Disposition', 'attachment; filename="physioflow-termine.ics"');
+    res.send(lines.join('\r\n'));
+  } catch (error) {
+    res.status(500).json({ success: false, error: (error as Error).message });
+  }
+});
+
 // Get single appointment
 router.get('/:id', (req, res) => {
   try {
     const appointment = db.prepare(`
-      SELECT a.*, p.first_name || ' ' || p.last_name as patient_name, p.phone as patient_phone
+      SELECT
+        a.*,
+        p.first_name || ' ' || p.last_name as patient_name,
+        p.phone as patient_phone,
+        t.name as therapist_name,
+        t.color as therapist_color
       FROM appointments a
       JOIN patients p ON a.patient_id = p.id
+      LEFT JOIN therapists t ON a.therapist_id = t.id
       WHERE a.id = ?
     `).get(req.params.id);
     
@@ -81,7 +178,7 @@ router.get('/:id', (req, res) => {
 
 // Create appointment
 router.post('/', (req, res) => {
-  const { patient_id, date, time_start, time_end, treatment_type, notes, sms_reminder } = req.body;
+  const { patient_id, therapist_id, date, time_start, time_end, treatment_type, notes, sms_reminder } = req.body;
   
   if (!patient_id || !date || !time_start || !time_end || !treatment_type) {
     return res.status(400).json({ 
@@ -99,15 +196,37 @@ router.post('/', (req, res) => {
   }
   
   try {
+    const overlapping = db.prepare(`
+      SELECT id
+      FROM appointments
+      WHERE therapist_id IS ?
+        AND date = ?
+        AND status != 'cancelled'
+        AND NOT (time_end <= ? OR time_start >= ?)
+    `).get(therapist_id || null, date, time_start, time_end) as { id: number } | undefined;
+
+    if (overlapping) {
+      return res.status(409).json({
+        success: false,
+        error: 'Für diese/n Therapeut/in besteht in diesem Zeitraum bereits ein Termin',
+      });
+    }
+
     const result = db.prepare(`
-      INSERT INTO appointments (patient_id, date, time_start, time_end, treatment_type, notes, sms_reminder)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `).run(patient_id, date, time_start, time_end, treatment_type, notes || null, sms_reminder || 0);
+      INSERT INTO appointments (patient_id, therapist_id, date, time_start, time_end, treatment_type, notes, sms_reminder)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(patient_id, therapist_id || null, date, time_start, time_end, treatment_type, notes || null, sms_reminder || 0);
     
     const appointment = db.prepare(`
-      SELECT a.*, p.first_name || ' ' || p.last_name as patient_name, p.phone as patient_phone
+      SELECT
+        a.*,
+        p.first_name || ' ' || p.last_name as patient_name,
+        p.phone as patient_phone,
+        t.name as therapist_name,
+        t.color as therapist_color
       FROM appointments a
       JOIN patients p ON a.patient_id = p.id
+      LEFT JOIN therapists t ON a.therapist_id = t.id
       WHERE a.id = ?
     `).get(result.lastInsertRowid);
     
@@ -119,7 +238,7 @@ router.post('/', (req, res) => {
 
 // Update appointment
 router.put('/:id', (req, res) => {
-  const { patient_id, date, time_start, time_end, treatment_type, notes, sms_reminder } = req.body;
+  const { patient_id, therapist_id, date, time_start, time_end, treatment_type, notes, sms_reminder } = req.body;
   const { id } = req.params;
   
   // Validate time range if both times are provided
@@ -131,21 +250,44 @@ router.put('/:id', (req, res) => {
   }
   
   try {
+    const overlapping = db.prepare(`
+      SELECT id
+      FROM appointments
+      WHERE therapist_id IS ?
+        AND date = ?
+        AND status != 'cancelled'
+        AND id != ?
+        AND NOT (time_end <= ? OR time_start >= ?)
+    `).get(therapist_id || null, date, id, time_start, time_end) as { id: number } | undefined;
+
+    if (overlapping) {
+      return res.status(409).json({
+        success: false,
+        error: 'Für diese/n Therapeut/in besteht in diesem Zeitraum bereits ein Termin',
+      });
+    }
+
     const result = db.prepare(`
       UPDATE appointments 
-      SET patient_id = ?, date = ?, time_start = ?, time_end = ?, 
+      SET patient_id = ?, therapist_id = ?, date = ?, time_start = ?, time_end = ?, 
           treatment_type = ?, notes = ?, sms_reminder = ?
       WHERE id = ?
-    `).run(patient_id, date, time_start, time_end, treatment_type, notes, sms_reminder, id);
+    `).run(patient_id, therapist_id || null, date, time_start, time_end, treatment_type, notes || null, sms_reminder ?? 0, id);
     
     if (result.changes === 0) {
       return res.status(404).json({ success: false, error: 'Termin nicht gefunden' });
     }
     
     const appointment = db.prepare(`
-      SELECT a.*, p.first_name || ' ' || p.last_name as patient_name, p.phone as patient_phone
+      SELECT
+        a.*,
+        p.first_name || ' ' || p.last_name as patient_name,
+        p.phone as patient_phone,
+        t.name as therapist_name,
+        t.color as therapist_color
       FROM appointments a
       JOIN patients p ON a.patient_id = p.id
+      LEFT JOIN therapists t ON a.therapist_id = t.id
       WHERE a.id = ?
     `).get(id);
     
@@ -164,18 +306,30 @@ router.post('/:id/cancel', (req, res) => {
     }
     if (existing.status === 'cancelled') {
       const appointment = db.prepare(`
-        SELECT a.*, p.first_name || ' ' || p.last_name as patient_name, p.phone as patient_phone
+        SELECT
+          a.*,
+          p.first_name || ' ' || p.last_name as patient_name,
+          p.phone as patient_phone,
+          t.name as therapist_name,
+          t.color as therapist_color
         FROM appointments a
         JOIN patients p ON a.patient_id = p.id
+        LEFT JOIN therapists t ON a.therapist_id = t.id
         WHERE a.id = ?
       `).get(req.params.id);
       return res.json({ success: true, data: appointment });
     }
     db.prepare('UPDATE appointments SET status = ? WHERE id = ?').run('cancelled', req.params.id);
     const appointment = db.prepare(`
-      SELECT a.*, p.first_name || ' ' || p.last_name as patient_name, p.phone as patient_phone
+      SELECT
+        a.*,
+        p.first_name || ' ' || p.last_name as patient_name,
+        p.phone as patient_phone,
+        t.name as therapist_name,
+        t.color as therapist_color
       FROM appointments a
       JOIN patients p ON a.patient_id = p.id
+      LEFT JOIN therapists t ON a.therapist_id = t.id
       WHERE a.id = ?
     `).get(req.params.id);
     res.json({ success: true, data: appointment });

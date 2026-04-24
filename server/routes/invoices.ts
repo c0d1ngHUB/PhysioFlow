@@ -5,6 +5,24 @@ import QRCode from 'qrcode';
 
 const router = Router();
 
+const DUNNING_LABELS: Record<number, string> = {
+  0: 'Keine Mahnung',
+  1: 'Zahlungserinnerung',
+  2: 'Mahnung',
+  3: 'Letzte Mahnung',
+};
+
+function formatCurrency(value: number): string {
+  return new Intl.NumberFormat('de-AT', { style: 'currency', currency: 'EUR' }).format(value);
+}
+
+function calculateDunningDeadline(level: number): string {
+  const date = new Date();
+  const days = level >= 3 ? 5 : level === 2 ? 7 : 10;
+  date.setDate(date.getDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
 // Generate next invoice number: RF-YYYYMMDD-XXX
 // Must be called within a BEGIN IMMEDIATE transaction to prevent race conditions
 function generateInvoiceNumber(): string {
@@ -70,7 +88,7 @@ router.get('/:id', (req, res) => {
     `).get(req.params.id);
     
     if (!invoice) {
-      return res.status(404).json({ success: false, error: 'Honorar note nicht gefunden' });
+      return res.status(404).json({ success: false, error: 'Honorarnote nicht gefunden' });
     }
     res.json({ success: true, data: invoice });
   } catch (error) {
@@ -137,10 +155,21 @@ router.get('/:id/pdf', async (req, res) => {
       FROM invoices i
       JOIN patients p ON i.patient_id = p.id
       WHERE i.id = ?
-    `).get(req.params.id) as any;
+    `).get(req.params.id) as {
+      invoice_number: string;
+      created_at: string;
+      patient_name: string;
+      patient_birthdate?: string | null;
+      patient_email?: string | null;
+      patient_phone?: string | null;
+      description?: string | null;
+      units: number;
+      rate_per_unit: number;
+      total: number;
+    } | undefined;
     
     if (!invoice) {
-      return res.status(404).json({ success: false, error: 'Honorar note nicht gefunden' });
+      return res.status(404).json({ success: false, error: 'Honorarnote nicht gefunden' });
     }
     
     // Create PDF
@@ -233,16 +262,148 @@ router.get('/:id/pdf', async (req, res) => {
   }
 });
 
+router.post('/:id/dunning/escalate', (req, res) => {
+  try {
+    const invoice = db.prepare('SELECT * FROM invoices WHERE id = ?').get(req.params.id) as {
+      id: number;
+      paid: number;
+      dunning_level: number;
+    } | undefined;
+
+    if (!invoice) {
+      return res.status(404).json({ success: false, error: 'Honorarnote nicht gefunden' });
+    }
+
+    if (invoice.paid) {
+      return res.status(400).json({ success: false, error: 'Bezahlte Honorarnoten können nicht gemahnt werden' });
+    }
+
+    if (invoice.dunning_level >= 3) {
+      return res.status(400).json({ success: false, error: 'Die letzte Mahnstufe ist bereits erreicht' });
+    }
+
+    const nextLevel = invoice.dunning_level + 1;
+    const dunningDate = new Date().toISOString();
+
+    db.prepare(`
+      UPDATE invoices
+      SET dunning_level = ?, dunning_date = ?
+      WHERE id = ?
+    `).run(nextLevel, dunningDate, req.params.id);
+
+    const updated = db.prepare(`
+      SELECT i.*, p.first_name || ' ' || p.last_name as patient_name,
+             p.email as patient_email, p.phone as patient_phone
+      FROM invoices i
+      JOIN patients p ON i.patient_id = p.id
+      WHERE i.id = ?
+    `).get(req.params.id);
+
+    res.json({ success: true, data: updated });
+  } catch (error) {
+    res.status(500).json({ success: false, error: (error as Error).message });
+  }
+});
+
+router.get('/:id/dunning-letter.pdf', (req, res) => {
+  try {
+    const invoice = db.prepare(`
+      SELECT i.*, p.first_name || ' ' || p.last_name as patient_name,
+             p.email as patient_email, p.phone as patient_phone,
+             p.address as patient_address
+      FROM invoices i
+      JOIN patients p ON i.patient_id = p.id
+      WHERE i.id = ?
+    `).get(req.params.id) as {
+      invoice_number: string;
+      total: number;
+      dunning_level: number;
+      patient_name: string;
+      patient_email?: string | null;
+      patient_phone?: string | null;
+      patient_address?: string | null;
+    } | undefined;
+
+    if (!invoice) {
+      return res.status(404).json({ success: false, error: 'Honorarnote nicht gefunden' });
+    }
+
+    if (invoice.dunning_level <= 0) {
+      return res.status(400).json({ success: false, error: 'Für diese Honorarnote wurde noch keine Mahnstufe gesetzt' });
+    }
+
+    const deadline = calculateDunningDeadline(invoice.dunning_level);
+    const levelLabel = DUNNING_LABELS[invoice.dunning_level] ?? 'Mahnung';
+
+    const doc = new PDFDocument({ margin: 50 });
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${invoice.invoice_number}-${invoice.dunning_level}-mahnung.pdf"`);
+    doc.pipe(res);
+
+    doc.fontSize(20).font('Helvetica-Bold').text(levelLabel);
+    doc.moveDown();
+    doc.fontSize(11).font('Helvetica');
+    doc.text(`Bezug auf Honorarnote: ${invoice.invoice_number}`);
+    doc.text(`Datum: ${new Date().toLocaleDateString('de-AT')}`);
+    doc.text(`Zahlungsfrist: ${new Date(deadline).toLocaleDateString('de-AT')}`);
+    doc.moveDown();
+
+    doc.font('Helvetica-Bold').text('Patient/in');
+    doc.font('Helvetica').text(invoice.patient_name);
+    if (invoice.patient_address) {
+      doc.text(invoice.patient_address);
+    }
+    if (invoice.patient_email) {
+      doc.text(invoice.patient_email);
+    }
+    if (invoice.patient_phone) {
+      doc.text(invoice.patient_phone);
+    }
+
+    doc.moveDown(2);
+    doc.font('Helvetica').text(
+      `Wir ersuchen um Begleichung des offenen Betrags aus der Honorarnote ${invoice.invoice_number}. ` +
+      `Der derzeit offene Gesamtbetrag beträgt ${formatCurrency(invoice.total)}. ` +
+      `Bitte überweisen Sie den Betrag bis spätestens ${new Date(deadline).toLocaleDateString('de-AT')}.`
+    );
+
+    if (invoice.dunning_level >= 2) {
+      doc.moveDown();
+      doc.text('Sollte bereits eine Zahlung erfolgt sein, betrachten Sie dieses Schreiben bitte als gegenstandslos.');
+    }
+
+    if (invoice.dunning_level >= 3) {
+      doc.moveDown();
+      doc.font('Helvetica-Bold').text('Hinweis');
+      doc.font('Helvetica').text('Dies ist die letzte Mahnung vor weiteren rechtlichen Schritten.');
+    }
+
+    doc.moveDown(2);
+    doc.font('Helvetica-Bold').text('Betrag');
+    doc.font('Helvetica').text(formatCurrency(invoice.total));
+
+    doc.moveDown(3);
+    doc.fontSize(9).text('Steuerbefreit gemäß §6 Abs.1 Z 19 UStG (Heilbehandlungsleistungen)', { align: 'center' });
+    doc.end();
+  } catch (error) {
+    res.status(500).json({ success: false, error: 'Mahnbrief konnte nicht erstellt werden' });
+  }
+});
+
 // Mark invoice as paid/unpaid
 router.put('/:id/paid', (req, res) => {
   const { paid } = req.body;
   
   try {
-    const result = db.prepare('UPDATE invoices SET paid = ? WHERE id = ?')
-      .run(paid ? 1 : 0, req.params.id);
+    const result = db.prepare(`
+      UPDATE invoices
+      SET paid = ?, dunning_level = CASE WHEN ? = 1 THEN 0 ELSE dunning_level END,
+          dunning_date = CASE WHEN ? = 1 THEN NULL ELSE dunning_date END
+      WHERE id = ?
+    `).run(paid ? 1 : 0, paid ? 1 : 0, paid ? 1 : 0, req.params.id);
     
     if (result.changes === 0) {
-      return res.status(404).json({ success: false, error: 'Honorar note nicht gefunden' });
+      return res.status(404).json({ success: false, error: 'Honorarnote nicht gefunden' });
     }
     
     const invoice = db.prepare('SELECT * FROM invoices WHERE id = ?').get(req.params.id);
@@ -257,9 +418,9 @@ router.delete('/:id', (req, res) => {
   try {
     const result = db.prepare('DELETE FROM invoices WHERE id = ?').run(req.params.id);
     if (result.changes === 0) {
-      return res.status(404).json({ success: false, error: 'Honorar note nicht gefunden' });
+      return res.status(404).json({ success: false, error: 'Honorarnote nicht gefunden' });
     }
-    res.json({ success: true, message: 'Honorar note erfolgreich gelöscht' });
+    res.json({ success: true, message: 'Honorarnote erfolgreich gelöscht' });
   } catch (error) {
     res.status(500).json({ success: false, error: (error as Error).message });
   }

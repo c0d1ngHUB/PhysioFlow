@@ -16,16 +16,20 @@ export interface Patient {
 export interface Appointment {
   id?: number;
   patient_id: number;
+  therapist_id?: number | null;
   date: string;
   time_start: string;
   time_end: string;
   treatment_type: string;
   notes?: string;
-  sms_reminder: 0 | 1 | 2; // 0=kein SMS, 1=gesendet, 2=geplant
+  sms_reminder: 0 | 1 | 2 | 3; // 0=kein SMS, 1=gesendet, 2=geplant, 3=fehlgeschlagen
+  status?: 'scheduled' | 'cancelled';
   created_at?: string;
   // Joined fields (always present from API)
   patient_name: string;
   patient_phone: string;
+  therapist_name?: string | null;
+  therapist_color?: string | null;
 }
 
 // Invoice Type
@@ -40,6 +44,8 @@ export interface Invoice {
   description: string;
   created_at?: string;
   paid: boolean; // stored as 0/1 in DB, boolean in API
+  dunning_level: 0 | 1 | 2 | 3;
+  dunning_date?: string | null;
   // Joined fields
   patient_name: string;
   patient_email?: string;
@@ -81,4 +87,24 @@ export interface Expense {
   date: string;
   receipt_path?: string;
   created_at?: string;
+}
+
+export interface Therapist {
+  id?: number;
+  name: string;
+  color: string;
+  created_at?: string;
+}
+
+export interface Voucher {
+  id?: number;
+  code: string;
+  patient_id?: number | null;
+  description: string;
+  value: number;
+  used: boolean;
+  used_date?: string | null;
+  expires_at?: string | null;
+  created_at?: string;
+  patient_name?: string | null;
 }
