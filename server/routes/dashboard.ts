@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import db from '../db/index.js';
+import { respondWithServerError } from '../utils/httpErrors.js';
 
 const router = Router();
 
@@ -150,7 +151,7 @@ router.get('/', (req, res) => {
       }
     });
   } catch (error) {
-    res.status(500).json({ success: false, error: (error as Error).message });
+    respondWithServerError(res, error, 'Fehler beim Laden der Dashboard-Daten:', 'Dashboard-Daten konnten nicht geladen werden.');
   }
 });
 

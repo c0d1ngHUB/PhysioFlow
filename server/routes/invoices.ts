@@ -2,6 +2,8 @@ import { Router } from 'express';
 import db from '../db/index.js';
 import PDFDocument from 'pdfkit';
 import QRCode from 'qrcode';
+import { requireRole } from '../utils/auth.js';
+import { respondWithServerError } from '../utils/httpErrors.js';
 
 const router = Router();
 
@@ -71,7 +73,7 @@ router.get('/', (req, res) => {
     const invoices = db.prepare(query).all(...params);
     res.json({ success: true, data: invoices });
   } catch (error) {
-    res.status(500).json({ success: false, error: (error as Error).message });
+    respondWithServerError(res, error, 'Fehler beim Laden der Honorarnoten:', 'Honorarnoten konnten nicht geladen werden.');
   }
 });
 
@@ -92,12 +94,12 @@ router.get('/:id', (req, res) => {
     }
     res.json({ success: true, data: invoice });
   } catch (error) {
-    res.status(500).json({ success: false, error: (error as Error).message });
+    respondWithServerError(res, error, 'Fehler beim Laden der Honorarnote:', 'Honorarnote konnte nicht geladen werden.');
   }
 });
 
 // Create invoice
-router.post('/', async (req, res) => {
+router.post('/', requireRole('admin'), async (req, res) => {
   const { patient_id, appointment_id, units, rate_per_unit, description } = req.body;
   
   if (!patient_id || !units || !rate_per_unit) {
@@ -141,7 +143,7 @@ router.post('/', async (req, res) => {
     
     res.status(201).json({ success: true, data: invoice });
   } catch (error) {
-    res.status(500).json({ success: false, error: (error as Error).message });
+    respondWithServerError(res, error, 'Fehler beim Erstellen der Honorarnote:', 'Honorarnote konnte nicht angelegt werden.');
   }
 });
 
@@ -262,7 +264,7 @@ router.get('/:id/pdf', async (req, res) => {
   }
 });
 
-router.post('/:id/dunning/escalate', (req, res) => {
+router.post('/:id/dunning/escalate', requireRole('admin'), (req, res) => {
   try {
     const invoice = db.prepare('SELECT * FROM invoices WHERE id = ?').get(req.params.id) as {
       id: number;
@@ -301,7 +303,7 @@ router.post('/:id/dunning/escalate', (req, res) => {
 
     res.json({ success: true, data: updated });
   } catch (error) {
-    res.status(500).json({ success: false, error: (error as Error).message });
+    respondWithServerError(res, error, 'Fehler beim Mahnstufen-Update:', 'Mahnstufe konnte nicht aktualisiert werden.');
   }
 });
 
@@ -391,7 +393,7 @@ router.get('/:id/dunning-letter.pdf', (req, res) => {
 });
 
 // Mark invoice as paid/unpaid
-router.put('/:id/paid', (req, res) => {
+router.put('/:id/paid', requireRole('admin'), (req, res) => {
   const { paid } = req.body;
   
   try {
@@ -409,12 +411,12 @@ router.put('/:id/paid', (req, res) => {
     const invoice = db.prepare('SELECT * FROM invoices WHERE id = ?').get(req.params.id);
     res.json({ success: true, data: invoice });
   } catch (error) {
-    res.status(500).json({ success: false, error: (error as Error).message });
+    respondWithServerError(res, error, 'Fehler beim Aktualisieren des Zahlungsstatus:', 'Zahlungsstatus konnte nicht aktualisiert werden.');
   }
 });
 
 // Delete invoice
-router.delete('/:id', (req, res) => {
+router.delete('/:id', requireRole('admin'), (req, res) => {
   try {
     const result = db.prepare('DELETE FROM invoices WHERE id = ?').run(req.params.id);
     if (result.changes === 0) {
@@ -422,7 +424,7 @@ router.delete('/:id', (req, res) => {
     }
     res.json({ success: true, message: 'Honorarnote erfolgreich gelöscht' });
   } catch (error) {
-    res.status(500).json({ success: false, error: (error as Error).message });
+    respondWithServerError(res, error, 'Fehler beim Löschen der Honorarnote:', 'Honorarnote konnte nicht gelöscht werden.');
   }
 });
 

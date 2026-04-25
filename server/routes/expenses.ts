@@ -1,5 +1,7 @@
 import { Router } from 'express';
 import db from '../db/index.js';
+import { requireRole } from '../utils/auth.js';
+import { respondWithServerError } from '../utils/httpErrors.js';
 
 const router = Router();
 
@@ -62,8 +64,7 @@ router.get('/', (req, res) => {
       }
     });
   } catch (error) {
-    console.error('Failed to fetch expenses:', error);
-    res.status(500).json({ success: false, error: 'Failed to fetch expenses' });
+    respondWithServerError(res, error, 'Fehler beim Laden der Ausgaben:', 'Ausgaben konnten nicht geladen werden.');
   }
 });
 
@@ -73,17 +74,17 @@ router.get('/categories', (req, res) => {
     const categories = db.prepare('SELECT DISTINCT category FROM expenses ORDER BY category').all();
     res.json({ success: true, data: categories.map((c: any) => c.category) });
   } catch (error) {
-    res.status(500).json({ success: false, error: 'Failed to fetch categories' });
+    respondWithServerError(res, error, 'Fehler beim Laden der Ausgabenkategorien:', 'Ausgabenkategorien konnten nicht geladen werden.');
   }
 });
 
 // Create expense
-router.post('/', (req, res) => {
+router.post('/', requireRole('admin'), (req, res) => {
   try {
     const { category, description, amount, date, receipt_path } = req.body;
     
     if (!category || !amount || !date) {
-      return res.status(400).json({ success: false, error: 'Category, amount and date are required' });
+      return res.status(400).json({ success: false, error: 'Kategorie, Betrag und Datum sind erforderlich.' });
     }
     
     const result = db.prepare(`
@@ -94,13 +95,12 @@ router.post('/', (req, res) => {
     const expense = db.prepare('SELECT * FROM expenses WHERE id = ?').get(result.lastInsertRowid);
     res.json({ success: true, data: expense });
   } catch (error) {
-    console.error('Failed to create expense:', error);
-    res.status(500).json({ success: false, error: 'Failed to create expense' });
+    respondWithServerError(res, error, 'Fehler beim Erstellen der Ausgabe:', 'Ausgabe konnte nicht angelegt werden.');
   }
 });
 
 // Update expense
-router.put('/:id', (req, res) => {
+router.put('/:id', requireRole('admin'), (req, res) => {
   try {
     const { id } = req.params;
     const body = req.body;
@@ -133,12 +133,12 @@ router.put('/:id', (req, res) => {
     const expense = db.prepare('SELECT * FROM expenses WHERE id = ?').get(id);
     res.json({ success: true, data: expense });
   } catch (error) {
-    res.status(500).json({ success: false, error: 'Failed to update expense' });
+    respondWithServerError(res, error, 'Fehler beim Aktualisieren der Ausgabe:', 'Ausgabe konnte nicht aktualisiert werden.');
   }
 });
 
 // Delete expense
-router.delete('/:id', (req, res) => {
+router.delete('/:id', requireRole('admin'), (req, res) => {
   try {
     const { id } = req.params;
     const result = db.prepare('DELETE FROM expenses WHERE id = ?').run(id);
@@ -147,7 +147,7 @@ router.delete('/:id', (req, res) => {
     }
     res.json({ success: true });
   } catch (error) {
-    res.status(500).json({ success: false, error: 'Failed to delete expense' });
+    respondWithServerError(res, error, 'Fehler beim Löschen der Ausgabe:', 'Ausgabe konnte nicht gelöscht werden.');
   }
 });
 

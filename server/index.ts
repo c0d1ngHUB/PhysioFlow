@@ -17,6 +17,8 @@ import dashboardRouter from './routes/dashboard.js';
 import expensesRouter from './routes/expenses.js';
 import therapistsRouter from './routes/therapists.js';
 import vouchersRouter from './routes/vouchers.js';
+import { requireRole } from './utils/auth.js';
+import { respondWithServerError } from './utils/httpErrors.js';
 
 dotenv.config();
 
@@ -25,41 +27,42 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 const PORT = process.env.PORT || 3001;
 
-function requireRole(role: string) {
-  return (req: express.Request, res: express.Response, next: express.NextFunction) => {
-    if (req.session.user?.role !== role) {
-      res.status(403).json({ success: false, error: 'Keine Berechtigung' });
-      return;
-    }
-    next();
-  };
+function getAllowedOrigins() {
+  if (process.env.NODE_ENV === 'production') {
+    return [process.env.PHYSIOFLOW_ORIGIN || 'https://physio-flow.online'];
+  }
+
+  return [
+    'http://localhost:5173',
+    'http://localhost:3001',
+    'http://localhost:4173',
+    'http://127.0.0.1:5173',
+    'http://127.0.0.1:3001',
+    'http://127.0.0.1:4173',
+  ];
 }
 
-// ---------------------------------------------------------------------------
-// Allowed origins for CORS
-// ---------------------------------------------------------------------------
-const ALLOWED_ORIGINS = [
-  'http://localhost:5173',
-  'http://localhost:3001',
-  'http://192.168.1.69:3001',
-  'https://physio-flow.online',
-];
+const ALLOWED_ORIGINS = getAllowedOrigins();
+
+function isAllowedOrigin(origin?: string) {
+  if (!origin) {
+    return process.env.NODE_ENV !== 'production';
+  }
+
+  return ALLOWED_ORIGINS.includes(origin);
+}
 
 // ---------------------------------------------------------------------------
 // CORS – restrict to known origins, credentials required for session cookies
 // ---------------------------------------------------------------------------
 app.use(cors({
   origin: (origin, callback) => {
-    // Allow requests with no origin (e.g. curl, server-to-server) in dev only
-    if (!origin && process.env.NODE_ENV !== 'production') {
+    if (isAllowedOrigin(origin)) {
       callback(null, true);
       return;
     }
-    if (!origin || ALLOWED_ORIGINS.includes(origin)) {
-      callback(null, true);
-    } else {
-      callback(new Error('CORS origin not allowed'));
-    }
+
+    callback(new Error('CORS Origin nicht erlaubt'));
   },
   credentials: true,
 }));
@@ -79,13 +82,14 @@ const SESSION_SECRET = process.env.SESSION_SECRET
 if (!SESSION_SECRET) {
   throw new Error('SESSION_SECRET is required in production. Set it in .env');
 }
+app.set('trust proxy', 1);
 app.use(session({
   secret: SESSION_SECRET,
   resave: false,
   saveUninitialized: false,
   cookie: {
     httpOnly: true,
-    secure: process.env.SESSION_COOKIE_SECURE === 'true', // Set 'true' when behind HTTPS reverse proxy
+    secure: process.env.NODE_ENV === 'production',
     sameSite: 'lax',
     maxAge: 24 * 60 * 60 * 1000, // 24 hours
   },
@@ -100,14 +104,13 @@ app.use('/api', (req: express.Request, res: express.Response, next: express.Next
   const origin = req.headers.origin;
   if (!origin) {
     if (process.env.NODE_ENV === 'production') {
-      res.status(403).json({ success: false, error: 'Missing Origin header' });
+      res.status(403).json({ success: false, error: 'Origin-Header fehlt.' });
       return;
     }
-    // In dev, allow localhost without Origin
     return next();
   }
-  if (!ALLOWED_ORIGINS.includes(origin)) {
-    res.status(403).json({ success: false, error: 'Invalid Origin' });
+  if (!isAllowedOrigin(origin)) {
+    res.status(403).json({ success: false, error: 'Ungültige Herkunft.' });
     return;
   }
   next();
@@ -136,6 +139,26 @@ app.post('/api/auth/login', express.json(), loginLimiter, async (req: express.Re
     } catch (e) { /* audit logging must not break login */ }
   };
 
+  const finalizeLogin = (sessionUser: { username: string; role: string }) => {
+    req.session.regenerate((regenerateError) => {
+      if (regenerateError) {
+        respondWithServerError(res, regenerateError, 'Fehler bei Session-Regeneration nach Login:');
+        return;
+      }
+
+      req.session.isAuthenticated = true;
+      req.session.user = sessionUser;
+      req.session.save((saveError) => {
+        if (saveError) {
+          respondWithServerError(res, saveError, 'Fehler beim Speichern der Session nach Login:');
+          return;
+        }
+
+        res.json({ success: true, user: sessionUser });
+      });
+    });
+  };
+
   // Legacy fallback: if no username provided and PHYSIOFLOW_PASSWORD is set, allow plain-password login
   if (!username && password) {
     const envPassword = process.env.PHYSIOFLOW_PASSWORD;
@@ -150,11 +173,7 @@ app.post('/api/auth/login', express.json(), loginLimiter, async (req: express.Re
       }
       if (legacyMatch) {
         logAudit('login-legacy', true);
-        req.session.isAuthenticated = true;
-        req.session.user = { username: 'admin', role: 'admin' };
-        req.session.save(() => {
-          res.json({ success: true, user: { username: 'admin', role: 'admin' } });
-        });
+        finalizeLogin({ username: 'admin', role: 'admin' });
         return;
       }
       logAudit('login-legacy', false);
@@ -187,11 +206,7 @@ app.post('/api/auth/login', express.json(), loginLimiter, async (req: express.Re
   }
 
   logAudit('login', true);
-  req.session.isAuthenticated = true;
-  req.session.user = { username: user.username, role: user.role };
-  req.session.save(() => {
-    res.json({ success: true, user: { username: user.username, role: user.role } });
-  });
+  finalizeLogin({ username: user.username, role: user.role });
 });
 
 app.post('/api/auth/logout', (req: express.Request, res: express.Response) => {
@@ -213,7 +228,7 @@ app.get('/api/auth/check', (req: express.Request, res: express.Response) => {
 app.use('/api', (req: express.Request, res: express.Response, next: express.NextFunction) => {
   if (req.path.startsWith('/auth/')) return next();
   if (req.session.isAuthenticated !== true) {
-    res.status(401).json({ success: false, error: 'Authentication required' });
+    res.status(401).json({ success: false, error: 'Anmeldung erforderlich.' });
     return;
   }
   next();
@@ -247,8 +262,7 @@ if (process.env.NODE_ENV === 'production') {
 // Error handling middleware
 // ---------------------------------------------------------------------------
 app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
-  console.error('Error:', err.message);
-  res.status(500).json({ success: false, error: err.message });
+  respondWithServerError(res, err, 'Unbehandelter Serverfehler:');
 });
 
 app.listen(PORT, () => {

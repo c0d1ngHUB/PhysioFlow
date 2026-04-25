@@ -64,7 +64,7 @@ export async function processScheduledSMS(): Promise<{ sent: number; failed: num
         UPDATE sms_log
         SET status = ?, sent_at = datetime('now'), message = ?
         WHERE appointment_id = ? AND status = 'scheduled'
-      `).run('failed', (error as Error).message, sms.appointment_id);
+      `).run('failed', 'Versand fehlgeschlagen.', sms.appointment_id);
     }
   }
   
@@ -116,6 +116,7 @@ export async function sendManualSMS(appointmentId: number): Promise<{ success: b
     await sendSms({ to: phone, text: message });
     return { success: true };
   } catch (error) {
-    return { success: false, error: (error as Error).message };
+    console.error('[SMS Scheduler] Manual SMS failed:', error);
+    return { success: false, error: 'SMS konnte nicht gesendet werden.' };
   }
 }

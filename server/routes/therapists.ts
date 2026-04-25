@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import db from '../db/index.js';
+import { respondWithServerError } from '../utils/httpErrors.js';
 
 const router = Router();
 
@@ -16,7 +17,7 @@ router.get('/', (_req, res) => {
     const therapists = db.prepare('SELECT * FROM therapists ORDER BY name ASC').all();
     res.json({ success: true, data: therapists });
   } catch (error) {
-    res.status(500).json({ success: false, error: (error as Error).message });
+    respondWithServerError(res, error, 'Fehler beim Laden der Therapeut:innen:', 'Therapeut:innen konnten nicht geladen werden.');
   }
 });
 
@@ -38,7 +39,7 @@ router.post('/', requireAdmin, (req, res) => {
     const therapist = db.prepare('SELECT * FROM therapists WHERE id = ?').get(result.lastInsertRowid);
     res.status(201).json({ success: true, data: therapist });
   } catch (error) {
-    res.status(500).json({ success: false, error: (error as Error).message });
+    respondWithServerError(res, error, 'Fehler beim Erstellen der Therapeutin bzw. des Therapeuten:', 'Therapeut/in konnte nicht angelegt werden.');
   }
 });
 
@@ -64,7 +65,7 @@ router.put('/:id', requireAdmin, (req, res) => {
     const therapist = db.prepare('SELECT * FROM therapists WHERE id = ?').get(req.params.id);
     res.json({ success: true, data: therapist });
   } catch (error) {
-    res.status(500).json({ success: false, error: (error as Error).message });
+    respondWithServerError(res, error, 'Fehler beim Aktualisieren der Therapeutin bzw. des Therapeuten:', 'Therapeut/in konnte nicht aktualisiert werden.');
   }
 });
 
@@ -82,7 +83,7 @@ router.delete('/:id', requireAdmin, (req, res) => {
 
     res.json({ success: true, message: 'Therapeut/in gelöscht' });
   } catch (error) {
-    res.status(500).json({ success: false, error: (error as Error).message });
+    respondWithServerError(res, error, 'Fehler beim Löschen der Therapeutin bzw. des Therapeuten:', 'Therapeut/in konnte nicht gelöscht werden.');
   }
 });
 

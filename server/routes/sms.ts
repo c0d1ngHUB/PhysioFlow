@@ -1,11 +1,13 @@
 import { Router } from 'express';
 import db from '../db/index.js';
 import { formatPhone, getSmsProviderStatus, sendSms } from '../services/sms.js';
+import { requireRole } from '../utils/auth.js';
+import { respondWithServerError } from '../utils/httpErrors.js';
 
 const router = Router();
 
 // Send SMS reminder
-router.post('/send', async (req, res) => {
+router.post('/send', requireRole('admin'), async (req, res) => {
   const { to, patient_name, appointment_date, appointment_time } = req.body;
   
   if (!to || !patient_name || !appointment_date || !appointment_time) {
@@ -18,10 +20,11 @@ router.post('/send', async (req, res) => {
   let phone: string;
   try {
     phone = formatPhone(to);
-  } catch (err) {
+  } catch (error) {
+    console.error('Ungültige Telefonnummer für SMS:', error);
     return res.status(400).json({
       success: false,
-      error: (err as Error).message,
+      error: 'Telefonnummer ist ungültig.',
     });
   }
   
@@ -32,11 +35,8 @@ router.post('/send', async (req, res) => {
     const result = await sendSms({ to: phone, text: message });
     res.json({ success: true, data: result });
   } catch (error) {
-    console.error('SMS Error:', error);
-    res.status(502).json({ 
-      success: false, 
-      error: (error as Error).message || 'Fehler beim Senden der SMS'
-    });
+    console.error('Fehler beim Senden der SMS:', error);
+    res.status(502).json({ success: false, error: 'SMS konnte nicht gesendet werden.' });
   }
 });
 
@@ -45,7 +45,7 @@ router.get('/status', (_req, res) => {
 });
 
 // Schedule SMS reminder for appointment (24h before)
-router.post('/schedule', (req, res) => {
+router.post('/schedule', requireRole('admin'), (req, res) => {
   const { appointment_id } = req.body;
   
   if (!appointment_id) {
@@ -98,7 +98,7 @@ router.post('/schedule', (req, res) => {
       }
     });
   } catch (error) {
-    res.status(500).json({ success: false, error: (error as Error).message });
+    respondWithServerError(res, error, 'Fehler beim Planen der SMS:', 'SMS-Erinnerung konnte nicht geplant werden.');
   }
 });
 
@@ -111,7 +111,7 @@ router.get('/log/:appointmentId', (req, res) => {
     
     res.json({ success: true, data: logs });
   } catch (error) {
-    res.status(500).json({ success: false, error: (error as Error).message });
+    respondWithServerError(res, error, 'Fehler beim Laden des SMS-Protokolls:', 'SMS-Protokoll konnte nicht geladen werden.');
   }
 });
 

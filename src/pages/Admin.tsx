@@ -14,6 +14,8 @@ export default function Admin() {
   const [therapists, setTherapists] = useState<Therapist[]>([]);
   const [vouchers, setVouchers] = useState<Voucher[]>([]);
   const [loading, setLoading] = useState(true);
+  const [therapistsError, setTherapistsError] = useState('');
+  const [vouchersError, setVouchersError] = useState('');
 
   const [therapistModalOpen, setTherapistModalOpen] = useState(false);
   const [editingTherapist, setEditingTherapist] = useState<Therapist | null>(null);
@@ -45,26 +47,59 @@ export default function Admin() {
   const unusedVouchers = useMemo(() => vouchers.filter((voucher) => !voucher.used), [vouchers]);
 
   async function fetchPatients() {
-    const res = await fetch('/api/patients', { credentials: 'include' });
-    const data = await res.json();
-    if (data.success) {
-      setPatients(data.data);
+    try {
+      const res = await fetch('/api/patients', { credentials: 'include' });
+      const data = await res.json();
+      if (data.success) {
+        setPatients(data.data);
+        return;
+      }
+
+      setPatients([]);
+      showToast(data.error || 'Patient:innen konnten nicht geladen werden.', 'error');
+    } catch {
+      setPatients([]);
+      showToast('Patient:innen konnten nicht geladen werden.', 'error');
     }
   }
 
   async function fetchTherapists() {
-    const res = await fetch('/api/therapists', { credentials: 'include' });
-    const data = await res.json();
-    if (data.success) {
-      setTherapists(data.data);
+    setTherapistsError('');
+    try {
+      const res = await fetch('/api/therapists', { credentials: 'include' });
+      const data = await res.json();
+      if (data.success) {
+        setTherapists(data.data);
+        return;
+      }
+
+      setTherapists([]);
+      setTherapistsError(data.error || 'Therapeut:innen konnten nicht geladen werden.');
+      showToast(data.error || 'Therapeut:innen konnten nicht geladen werden.', 'error');
+    } catch {
+      setTherapists([]);
+      setTherapistsError('Therapeut:innen konnten nicht geladen werden.');
+      showToast('Therapeut:innen konnten nicht geladen werden.', 'error');
     }
   }
 
   async function fetchVouchers() {
-    const res = await fetch('/api/vouchers', { credentials: 'include' });
-    const data = await res.json();
-    if (data.success) {
-      setVouchers(data.data);
+    setVouchersError('');
+    try {
+      const res = await fetch('/api/vouchers', { credentials: 'include' });
+      const data = await res.json();
+      if (data.success) {
+        setVouchers(data.data);
+        return;
+      }
+
+      setVouchers([]);
+      setVouchersError(data.error || 'Gutscheine konnten nicht geladen werden.');
+      showToast(data.error || 'Gutscheine konnten nicht geladen werden.', 'error');
+    } catch {
+      setVouchers([]);
+      setVouchersError('Gutscheine konnten nicht geladen werden.');
+      showToast('Gutscheine konnten nicht geladen werden.', 'error');
     }
   }
 
@@ -95,22 +130,26 @@ export default function Admin() {
     const url = editingTherapist ? `/api/therapists/${editingTherapist.id}` : '/api/therapists';
     const method = editingTherapist ? 'PUT' : 'POST';
 
-    const res = await fetch(url, {
-      method,
-      credentials: 'include',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(therapistForm),
-    });
+    try {
+      const res = await fetch(url, {
+        method,
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(therapistForm),
+      });
 
-    const data = await res.json();
-    if (!data.success) {
-      showToast(data.error || 'Therapeut/in konnte nicht gespeichert werden', 'error');
-      return;
+      const data = await res.json();
+      if (!data.success) {
+        showToast(data.error || 'Therapeut/in konnte nicht gespeichert werden.', 'error');
+        return;
+      }
+
+      await fetchTherapists();
+      setTherapistModalOpen(false);
+      showToast(editingTherapist ? 'Therapeut/in aktualisiert.' : 'Therapeut/in angelegt.', 'success');
+    } catch {
+      showToast('Therapeut/in konnte nicht gespeichert werden.', 'error');
     }
-
-    await fetchTherapists();
-    setTherapistModalOpen(false);
-    showToast(editingTherapist ? 'Therapeut/in aktualisiert' : 'Therapeut/in angelegt', 'success');
   }
 
   async function submitVoucher(event: React.FormEvent) {
@@ -118,29 +157,33 @@ export default function Admin() {
     const url = editingVoucher ? `/api/vouchers/${editingVoucher.id}` : '/api/vouchers';
     const method = editingVoucher ? 'PUT' : 'POST';
 
-    const res = await fetch(url, {
-      method,
-      credentials: 'include',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        code: voucherForm.code,
-        patient_id: voucherForm.patient_id || null,
-        description: voucherForm.description,
-        value: Number(voucherForm.value),
-        expires_at: voucherForm.expires_at || null,
-        used: voucherForm.used,
-      }),
-    });
+    try {
+      const res = await fetch(url, {
+        method,
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          code: voucherForm.code,
+          patient_id: voucherForm.patient_id || null,
+          description: voucherForm.description,
+          value: Number(voucherForm.value),
+          expires_at: voucherForm.expires_at || null,
+          used: voucherForm.used,
+        }),
+      });
 
-    const data = await res.json();
-    if (!data.success) {
-      showToast(data.error || 'Gutschein konnte nicht gespeichert werden', 'error');
-      return;
+      const data = await res.json();
+      if (!data.success) {
+        showToast(data.error || 'Gutschein konnte nicht gespeichert werden.', 'error');
+        return;
+      }
+
+      await fetchVouchers();
+      setVoucherModalOpen(false);
+      showToast(editingVoucher ? 'Gutschein aktualisiert.' : 'Gutschein angelegt.', 'success');
+    } catch {
+      showToast('Gutschein konnte nicht gespeichert werden.', 'error');
     }
-
-    await fetchVouchers();
-    setVoucherModalOpen(false);
-    showToast(editingVoucher ? 'Gutschein aktualisiert' : 'Gutschein angelegt', 'success');
   }
 
   async function toggleVoucherUsed(voucher: Voucher) {
@@ -154,36 +197,46 @@ export default function Admin() {
       });
       const data = await res.json();
       if (!data.success) {
-        showToast(data.error || 'Status konnte nicht geändert werden', 'error');
+        showToast(data.error || 'Gutscheinstatus konnte nicht geändert werden.', 'error');
         return;
       }
       await fetchVouchers();
-      showToast(!voucher.used ? 'Gutschein als eingelöst markiert' : 'Gutschein wieder als offen markiert', 'success');
+      showToast(!voucher.used ? 'Gutschein als eingelöst markiert.' : 'Gutschein wieder als offen markiert.', 'success');
+    } catch {
+      showToast('Gutscheinstatus konnte nicht geändert werden.', 'error');
     } finally {
       setVoucherActionId(null);
     }
   }
 
   async function deleteTherapist(id: number) {
-    const res = await fetch(`/api/therapists/${id}`, { method: 'DELETE', credentials: 'include' });
-    const data = await res.json();
-    if (!data.success) {
-      showToast(data.error || 'Therapeut/in konnte nicht gelöscht werden', 'error');
-      return;
+    try {
+      const res = await fetch(`/api/therapists/${id}`, { method: 'DELETE', credentials: 'include' });
+      const data = await res.json();
+      if (!data.success) {
+        showToast(data.error || 'Therapeut/in konnte nicht gelöscht werden.', 'error');
+        return;
+      }
+      await fetchTherapists();
+      showToast('Therapeut/in gelöscht.', 'success');
+    } catch {
+      showToast('Therapeut/in konnte nicht gelöscht werden.', 'error');
     }
-    await fetchTherapists();
-    showToast('Therapeut/in gelöscht', 'success');
   }
 
   async function deleteVoucher(id: number) {
-    const res = await fetch(`/api/vouchers/${id}`, { method: 'DELETE', credentials: 'include' });
-    const data = await res.json();
-    if (!data.success) {
-      showToast(data.error || 'Gutschein konnte nicht gelöscht werden', 'error');
-      return;
+    try {
+      const res = await fetch(`/api/vouchers/${id}`, { method: 'DELETE', credentials: 'include' });
+      const data = await res.json();
+      if (!data.success) {
+        showToast(data.error || 'Gutschein konnte nicht gelöscht werden.', 'error');
+        return;
+      }
+      await fetchVouchers();
+      showToast('Gutschein gelöscht.', 'success');
+    } catch {
+      showToast('Gutschein konnte nicht gelöscht werden.', 'error');
     }
-    await fetchVouchers();
-    showToast('Gutschein gelöscht', 'success');
   }
 
   if (loading) {
@@ -222,6 +275,12 @@ export default function Admin() {
           </div>
         </div>
       </div>
+
+      {(therapistsError || vouchersError) && (
+        <div className="rounded-2xl border border-red-200 bg-red-50 px-5 py-4 text-sm text-red-800 shadow-sm">
+          {therapistsError || vouchersError}
+        </div>
+      )}
 
       <div className="flex gap-2 rounded-2xl border border-slate-200 bg-white p-1 shadow-sm">
         <button

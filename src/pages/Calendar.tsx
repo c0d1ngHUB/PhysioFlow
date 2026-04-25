@@ -104,6 +104,7 @@ export default function Calendar({ initialModal, onModalConsumed }: CalendarProp
   const [therapistsLoading, setTherapistsLoading] = useState(true);
   const [patientsError, setPatientsError] = useState('');
   const [therapistsError, setTherapistsError] = useState('');
+  const [pendingInitialAppointmentModal, setPendingInitialAppointmentModal] = useState(false);
   const [showModal, setShowModal] = useState(false);
   const [editingAppointment, setEditingAppointment] = useState<Appointment | null>(null);
   const [confirmAction, setConfirmAction] = useState<{ message: string; onConfirm: () => void } | null>(null);
@@ -123,11 +124,71 @@ export default function Calendar({ initialModal, onModalConsumed }: CalendarProp
   }, []);
 
   useEffect(() => {
-    if (initialModal === 'appointment') {
+    const canOpenAppointmentModal = !patientsLoading && !therapistsLoading && !patientsError && !therapistsError && patients.length > 0;
+
+    if (initialModal !== 'appointment') {
+      return;
+    }
+
+    if (patientsLoading || therapistsLoading) {
+      setPendingInitialAppointmentModal(true);
+      onModalConsumed();
+      return;
+    }
+
+    if (canOpenAppointmentModal) {
       openCreateModal(selectedDate);
       onModalConsumed();
+      return;
     }
-  }, [initialModal, onModalConsumed, selectedDate]);
+
+    setPendingInitialAppointmentModal(false);
+    if (patientsError || therapistsError) {
+      showToast('Termin kann erst geöffnet werden, wenn Patient:innen und Therapeut:innen geladen sind.', 'error');
+    } else if (patients.length === 0) {
+      showToast('Bitte zuerst mindestens eine/n Patient:in anlegen.', 'warning');
+    }
+
+    onModalConsumed();
+  }, [
+    initialModal,
+    onModalConsumed,
+    patients.length,
+    patientsError,
+    patientsLoading,
+    selectedDate,
+    therapistsError,
+    therapistsLoading,
+  ]);
+
+  useEffect(() => {
+    const canOpenAppointmentModal = !patientsLoading && !therapistsLoading && !patientsError && !therapistsError && patients.length > 0;
+
+    if (!pendingInitialAppointmentModal || patientsLoading || therapistsLoading) {
+      return;
+    }
+
+    if (canOpenAppointmentModal) {
+      setPendingInitialAppointmentModal(false);
+      openCreateModal(selectedDate);
+      return;
+    }
+
+    setPendingInitialAppointmentModal(false);
+    if (patientsError || therapistsError) {
+      showToast('Termin kann erst geöffnet werden, wenn Patient:innen und Therapeut:innen geladen sind.', 'error');
+    } else if (patients.length === 0) {
+      showToast('Bitte zuerst mindestens eine/n Patient:in anlegen.', 'warning');
+    }
+  }, [
+    patients.length,
+    patientsError,
+    patientsLoading,
+    pendingInitialAppointmentModal,
+    selectedDate,
+    therapistsError,
+    therapistsLoading,
+  ]);
 
   useEffect(() => {
     const mediaQuery = window.matchMedia('(max-width: 767px)');

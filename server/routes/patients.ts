@@ -1,5 +1,7 @@
 import { Router } from 'express';
 import db from '../db/index.js';
+import { requireRole } from '../utils/auth.js';
+import { respondWithServerError } from '../utils/httpErrors.js';
 
 const router = Router();
 
@@ -17,7 +19,7 @@ router.get('/', (_req, res) => {
     const patients = db.prepare('SELECT * FROM patients ORDER BY last_name, first_name').all();
     res.json({ success: true, data: patients });
   } catch (error) {
-    res.status(500).json({ success: false, error: (error as Error).message });
+    respondWithServerError(res, error, 'Fehler beim Laden der Patient:innen:', 'Patient:innen konnten nicht geladen werden.');
   }
 });
 
@@ -30,12 +32,12 @@ router.get('/:id', (req, res) => {
     }
     res.json({ success: true, data: patient });
   } catch (error) {
-    res.status(500).json({ success: false, error: (error as Error).message });
+    respondWithServerError(res, error, 'Fehler beim Laden des Patienten:', 'Patient/in konnte nicht geladen werden.');
   }
 });
 
 // Create patient
-router.post('/', (req, res) => {
+router.post('/', requireRole('admin'), (req, res) => {
   const { first_name, last_name, phone, email, birthdate, notes, address, insurance_number } = req.body;
   
   if (!first_name || !last_name) {
@@ -51,12 +53,12 @@ router.post('/', (req, res) => {
     const patient = db.prepare('SELECT * FROM patients WHERE id = ?').get(result.lastInsertRowid);
     res.status(201).json({ success: true, data: patient });
   } catch (error) {
-    res.status(500).json({ success: false, error: (error as Error).message });
+    respondWithServerError(res, error, 'Fehler beim Erstellen des Patienten:', 'Patient/in konnte nicht angelegt werden.');
   }
 });
 
 // Update patient
-router.put('/:id', (req, res) => {
+router.put('/:id', requireRole('admin'), (req, res) => {
   const { first_name, last_name, phone, email, birthdate, notes, address, insurance_number } = req.body;
   const { id } = req.params;
   
@@ -74,12 +76,12 @@ router.put('/:id', (req, res) => {
     const patient = db.prepare('SELECT * FROM patients WHERE id = ?').get(id);
     res.json({ success: true, data: patient });
   } catch (error) {
-    res.status(500).json({ success: false, error: (error as Error).message });
+    respondWithServerError(res, error, 'Fehler beim Aktualisieren des Patienten:', 'Patient/in konnte nicht aktualisiert werden.');
   }
 });
 
 // Delete patient
-router.delete('/:id', (req, res) => {
+router.delete('/:id', requireRole('admin'), (req, res) => {
   try {
     const result = db.prepare('DELETE FROM patients WHERE id = ?').run(req.params.id);
     if (result.changes === 0) {
@@ -87,7 +89,7 @@ router.delete('/:id', (req, res) => {
     }
     res.json({ success: true, message: 'Patient erfolgreich gelöscht' });
   } catch (error) {
-    res.status(500).json({ success: false, error: (error as Error).message });
+    respondWithServerError(res, error, 'Fehler beim Löschen des Patienten:', 'Patient/in konnte nicht gelöscht werden.');
   }
 });
 
@@ -118,7 +120,7 @@ router.get('/:id/history', (req, res) => {
 
     res.json({ success: true, data: { patient, appointments, invoices } });
   } catch (error) {
-    res.status(500).json({ success: false, error: (error as Error).message });
+    respondWithServerError(res, error, 'Fehler beim Laden der Patientenhistorie:', 'Patientenhistorie konnte nicht geladen werden.');
   }
 });
 

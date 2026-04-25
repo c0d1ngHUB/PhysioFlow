@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import db from '../db/index.js';
+import { respondWithServerError } from '../utils/httpErrors.js';
 
 const router = Router();
 
@@ -14,7 +15,7 @@ router.get('/', (_req, res) => {
 
     res.json({ success: true, data: vouchers });
   } catch (error) {
-    res.status(500).json({ success: false, error: (error as Error).message });
+    respondWithServerError(res, error, 'Fehler beim Laden der Gutscheine:', 'Gutscheine konnten nicht geladen werden.');
   }
 });
 
@@ -40,7 +41,7 @@ router.post('/', (req, res) => {
 
     res.status(201).json({ success: true, data: voucher });
   } catch (error) {
-    res.status(500).json({ success: false, error: (error as Error).message });
+    respondWithServerError(res, error, 'Fehler beim Erstellen des Gutscheins:', 'Gutschein konnte nicht angelegt werden.');
   }
 });
 
@@ -79,7 +80,7 @@ router.put('/:id', (req, res) => {
 
     res.json({ success: true, data: voucher });
   } catch (error) {
-    res.status(500).json({ success: false, error: (error as Error).message });
+    respondWithServerError(res, error, 'Fehler beim Aktualisieren des Gutscheins:', 'Gutschein konnte nicht aktualisiert werden.');
   }
 });
 
@@ -106,7 +107,7 @@ router.post('/:id/use', (req, res) => {
 
     res.json({ success: true, data: voucher });
   } catch (error) {
-    res.status(500).json({ success: false, error: (error as Error).message });
+    respondWithServerError(res, error, 'Fehler beim Ändern des Gutscheinstatus:', 'Gutscheinstatus konnte nicht aktualisiert werden.');
   }
 });
 
@@ -119,7 +120,7 @@ router.delete('/:id', (req, res) => {
 
     res.json({ success: true, message: 'Gutschein gelöscht' });
   } catch (error) {
-    res.status(500).json({ success: false, error: (error as Error).message });
+    respondWithServerError(res, error, 'Fehler beim Löschen des Gutscheins:', 'Gutschein konnte nicht gelöscht werden.');
   }
 });
 
