@@ -3,6 +3,14 @@ import db from '../db/index.js';
 
 const router = Router();
 
+function requireAdmin(req: any, res: any, next: any) {
+  if (req.session.user?.role !== 'admin') {
+    res.status(403).json({ success: false, error: 'Keine Berechtigung' });
+    return;
+  }
+  next();
+}
+
 router.get('/', (_req, res) => {
   try {
     const therapists = db.prepare('SELECT * FROM therapists ORDER BY name ASC').all();
@@ -12,7 +20,7 @@ router.get('/', (_req, res) => {
   }
 });
 
-router.post('/', (req, res) => {
+router.post('/', requireAdmin, (req, res) => {
   const { name, color } = req.body ?? {};
 
   if (!name || typeof name !== 'string') {
@@ -34,7 +42,7 @@ router.post('/', (req, res) => {
   }
 });
 
-router.put('/:id', (req, res) => {
+router.put('/:id', requireAdmin, (req, res) => {
   const { name, color } = req.body ?? {};
   const safeColor = typeof color === 'string' && /^#[0-9A-Fa-f]{6}$/.test(color) ? color : '#2563EB';
 
@@ -60,7 +68,7 @@ router.put('/:id', (req, res) => {
   }
 });
 
-router.delete('/:id', (req, res) => {
+router.delete('/:id', requireAdmin, (req, res) => {
   try {
     const therapistCount = db.prepare('SELECT COUNT(*) as count FROM therapists').get() as { count: number };
     if (therapistCount.count <= 1) {

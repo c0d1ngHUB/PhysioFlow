@@ -11,6 +11,28 @@ function toDateOnlyString(value: string): string {
   return `${year}-${month}-${day}`;
 }
 
+function toLocalDateStr(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function getWeekRange(dateValue: string) {
+  const base = new Date(`${dateValue}T12:00:00`);
+  const day = base.getDay();
+  const mondayOffset = day === 0 ? -6 : 1 - day;
+  const monday = new Date(base);
+  monday.setDate(base.getDate() + mondayOffset);
+  const sunday = new Date(monday);
+  sunday.setDate(monday.getDate() + 6);
+
+  return {
+    monday: toLocalDateStr(monday),
+    sunday: toLocalDateStr(sunday),
+  };
+}
+
 function buildIcsDateTime(date: string, time: string): string {
   return `${date.replaceAll('-', '')}T${time.replaceAll(':', '')}00`;
 }
@@ -47,16 +69,9 @@ router.get('/', (req, res) => {
     params.push(date);
   } else if (date && view === 'week') {
     // Week view: get Monday-Sunday of the week containing `date`
-    const d = new Date(String(date));
-    const day = d.getDay();
-    const diff = day === 0 ? -6 : 1 - day;
-    const monday = new Date(d);
-    monday.setDate(d.getDate() + diff);
-    const sunday = new Date(monday);
-    sunday.setDate(monday.getDate() + 6);
-    const fmt = (dt: Date) => dt.toISOString().slice(0, 10);
+    const { monday, sunday } = getWeekRange(String(date));
     query += ' AND a.date >= ? AND a.date <= ?';
-    params.push(fmt(monday), fmt(sunday));
+    params.push(monday, sunday);
   } else if (date && view === 'month') {
     // Month view: get all days of the month containing `date`
     const [year, month] = String(date).split('-').map(Number);

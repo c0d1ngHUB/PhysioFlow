@@ -2,6 +2,34 @@ import { create } from 'zustand';
 
 export type Page = 'dashboard' | 'calendar' | 'patients' | 'invoices' | 'expenses' | 'admin';
 
+const NAVIGATION_STORAGE_KEY = 'physioflow.navigation';
+
+function readStoredNavigation(): { currentPage: Page; openModal: string | null } {
+  if (typeof window === 'undefined') {
+    return { currentPage: 'dashboard', openModal: null };
+  }
+
+  try {
+    const raw = window.sessionStorage.getItem(NAVIGATION_STORAGE_KEY);
+    if (!raw) {
+      return { currentPage: 'dashboard', openModal: null };
+    }
+
+    const parsed = JSON.parse(raw) as { currentPage?: Page; openModal?: string | null };
+    return {
+      currentPage: parsed.currentPage ?? 'dashboard',
+      openModal: parsed.openModal ?? null,
+    };
+  } catch {
+    return { currentPage: 'dashboard', openModal: null };
+  }
+}
+
+function storeNavigation(currentPage: Page, openModal: string | null) {
+  if (typeof window === 'undefined') return;
+  window.sessionStorage.setItem(NAVIGATION_STORAGE_KEY, JSON.stringify({ currentPage, openModal }));
+}
+
 interface NavigationState {
   currentPage: Page;
   openModal: string | null; // 'appointment' | 'patient' | 'invoice' | null
@@ -9,9 +37,17 @@ interface NavigationState {
   setOpenModal: (modal: string | null) => void;
 }
 
-export const useNavigation = create<NavigationState>((set) => ({
-  currentPage: 'dashboard',
-  openModal: null,
-  navigateTo: (page, modal = null) => set({ currentPage: page, openModal: modal }),
-  setOpenModal: (modal) => set({ openModal: modal }),
+const initialNavigation = readStoredNavigation();
+
+export const useNavigation = create<NavigationState>((set, get) => ({
+  currentPage: initialNavigation.currentPage,
+  openModal: initialNavigation.openModal,
+  navigateTo: (page, modal = null) => {
+    storeNavigation(page, modal);
+    set({ currentPage: page, openModal: modal });
+  },
+  setOpenModal: (modal) => {
+    storeNavigation(get().currentPage, modal);
+    set({ openModal: modal });
+  },
 }));

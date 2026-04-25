@@ -25,6 +25,16 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 const PORT = process.env.PORT || 3001;
 
+function requireRole(role: string) {
+  return (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    if (req.session.user?.role !== role) {
+      res.status(403).json({ success: false, error: 'Keine Berechtigung' });
+      return;
+    }
+    next();
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Allowed origins for CORS
 // ---------------------------------------------------------------------------
@@ -110,7 +120,7 @@ app.use('/api', (req: express.Request, res: express.Response, next: express.Next
 const loginLimiter = rateLimit({
   windowMs: 60 * 1000,
   max: 5,
-  message: { success: false, error: 'Too many login attempts. Try again in a minute.' },
+  message: { success: false, error: 'Zu viele Anmeldeversuche. Bitte in einer Minute erneut versuchen.', code: 'rate_limited' },
   standardHeaders: true,
   legacyHeaders: false,
 });
@@ -148,7 +158,7 @@ app.post('/api/auth/login', express.json(), loginLimiter, async (req: express.Re
         return;
       }
       logAudit('login-legacy', false);
-      res.status(401).json({ success: false, error: 'Invalid credentials' });
+      res.status(401).json({ success: false, error: 'Ungültige Anmeldedaten', code: 'invalid_credentials' });
       return;
     }
   }
@@ -156,7 +166,7 @@ app.post('/api/auth/login', express.json(), loginLimiter, async (req: express.Re
   // Standard user lookup
   if (!username || !password) {
     logAudit('login-missing-fields', false);
-    res.status(401).json({ success: false, error: 'Invalid credentials' });
+    res.status(401).json({ success: false, error: 'Benutzername und Passwort sind erforderlich', code: 'missing_credentials' });
     return;
   }
 
@@ -165,14 +175,14 @@ app.post('/api/auth/login', express.json(), loginLimiter, async (req: express.Re
 
   if (!user) {
     logAudit('login-user-not-found', false);
-    res.status(401).json({ success: false, error: 'Invalid credentials' });
+    res.status(401).json({ success: false, error: 'Ungültige Anmeldedaten', code: 'invalid_credentials' });
     return;
   }
 
   const match = await bcrypt.compare(password, user.password_hash);
   if (!match) {
     logAudit('login-wrong-password', false);
-    res.status(401).json({ success: false, error: 'Invalid credentials' });
+    res.status(401).json({ success: false, error: 'Ungültige Anmeldedaten', code: 'invalid_credentials' });
     return;
   }
 
@@ -219,7 +229,7 @@ app.use('/api/sms', smsRouter);
 app.use('/api/dashboard', dashboardRouter);
 app.use('/api/expenses', expensesRouter);
 app.use('/api/therapists', therapistsRouter);
-app.use('/api/vouchers', vouchersRouter);
+app.use('/api/vouchers', requireRole('admin'), vouchersRouter);
 
 // ---------------------------------------------------------------------------
 // Serve static files in production

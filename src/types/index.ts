@@ -75,6 +75,8 @@ export interface DashboardStats {
   unpaid_invoices: number;
   total_patients: number;
   unpaid_invoices_total: number;
+  week_start?: string;
+  week_end?: string;
   today_details: Appointment[];
 }
 

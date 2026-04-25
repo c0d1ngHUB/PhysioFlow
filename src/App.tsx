@@ -7,7 +7,7 @@ import Expenses from './pages/Expenses';
 import Admin from './pages/Admin';
 import { AuthProvider, useAuth } from './auth.tsx';
 import { useNavigation, type Page } from './navigation';
-import { ToastContainer } from './components/ui';
+import { SkeletonCardLarge, SkeletonStatsCard, ToastContainer } from './components/ui';
 
 // =============================================================================
 // Login Page
@@ -23,9 +23,9 @@ function LoginPage() {
     e.preventDefault();
     setSubmitting(true);
     setError('');
-    const ok = await login(username, password);
-    if (!ok) {
-      setError('Ungültige Anmeldedaten');
+    const result = await login(username, password);
+    if (!result.success) {
+      setError(result.message || 'Anmeldung nicht möglich.');
     }
     setSubmitting(false);
   };
@@ -73,13 +73,32 @@ function LoginPage() {
 // Main App with Sidebar
 // =============================================================================
 function AppContent() {
-  const { authenticated, loading, logout } = useAuth();
+  const { authenticated, loading, logout, user } = useAuth();
   const { currentPage, openModal, navigateTo, setOpenModal } = useNavigation();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [pageTransitionLoading, setPageTransitionLoading] = useState(false);
+  const isAdmin = user?.role === 'admin';
 
   useEffect(() => {
     if (!openModal) return;
   }, [currentPage, openModal]);
+
+  useEffect(() => {
+    if (!loading && authenticated && !isAdmin && currentPage === 'admin') {
+      navigateTo('dashboard');
+    }
+  }, [authenticated, currentPage, isAdmin, loading, navigateTo]);
+
+  useEffect(() => {
+    if (!authenticated || loading) {
+      return;
+    }
+
+    setSidebarOpen(false);
+    setPageTransitionLoading(true);
+    const timer = window.setTimeout(() => setPageTransitionLoading(false), 180);
+    return () => window.clearTimeout(timer);
+  }, [authenticated, currentPage, loading]);
 
   if (loading) {
     return (
@@ -123,8 +142,11 @@ function AppContent() {
       ],
     },
     { id: 'expenses', label: 'Ausgaben', icon: '📉' },
-    { id: 'admin', label: 'Verwaltung', icon: '🧩' },
   ];
+
+  if (isAdmin) {
+    navItems.push({ id: 'admin', label: 'Verwaltung', icon: '🧩' });
+  }
 
   return (
     <div className="min-h-screen bg-background flex">
@@ -208,29 +230,65 @@ function AppContent() {
 
         {/* Mobile Sidebar */}
         {sidebarOpen && (
-          <div className="md:hidden bg-surface border-b border-gray-200 px-4 py-2">
-            {navItems.map((item) => (
-              <button
-                key={item.id}
-                onClick={() => { navigateTo(item.id); setSidebarOpen(false); }}
-                className={`block w-full text-left px-3 py-2 rounded font-medium ${
-                  currentPage === item.id ? 'bg-primary-100 text-blue-900 font-bold' : 'text-text-secondary hover:bg-gray-100'
-                }`}
-              >
-                {item.icon} {item.label}
-              </button>
-            ))}
+          <div className="fixed inset-0 z-40 md:hidden">
+            <button
+              type="button"
+              aria-label="Navigation schließen"
+              className="absolute inset-0 bg-slate-900/30"
+              onClick={() => setSidebarOpen(false)}
+            />
+            <div className="absolute right-0 top-0 h-full w-72 max-w-[85vw] overflow-y-auto border-l border-gray-200 bg-surface p-4 shadow-2xl">
+              <div className="mb-4 flex items-center justify-between">
+                <div className="flex items-center">
+                  <span className="text-2xl mr-2">🩺</span>
+                  <h2 className="text-lg font-bold text-primary">PhysioFlow</h2>
+                </div>
+                <button onClick={() => setSidebarOpen(false)} className="rounded-lg p-2 hover:bg-gray-100">
+                  ✕
+                </button>
+              </div>
+              <div className="space-y-2">
+                {navItems.map((item) => (
+                  <button
+                    key={item.id}
+                    onClick={() => { navigateTo(item.id); setSidebarOpen(false); }}
+                    className={`block w-full text-left px-3 py-2 rounded font-medium ${
+                      currentPage === item.id ? 'bg-primary-100 text-blue-900 font-bold' : 'text-text-secondary hover:bg-gray-100'
+                    }`}
+                  >
+                    {item.icon} {item.label}
+                  </button>
+                ))}
+              </div>
+            </div>
           </div>
         )}
 
         {/* Page Content */}
         <main className="flex-1 p-4 md:p-8 overflow-auto">
-          {currentPage === 'dashboard' && <Dashboard onNavigate={navigateTo} />}
-          {currentPage === 'calendar' && <Calendar initialModal={openModal} onModalConsumed={() => setOpenModal(null)} />}
-          {currentPage === 'patients' && <Patients initialModal={openModal} onModalConsumed={() => setOpenModal(null)} />}
-          {currentPage === 'invoices' && <Invoices initialModal={openModal} onModalConsumed={() => setOpenModal(null)} />}
-          {currentPage === 'expenses' && <Expenses />}
-          {currentPage === 'admin' && <Admin />}
+          {pageTransitionLoading ? (
+            <div className="space-y-4">
+              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                <SkeletonStatsCard />
+                <SkeletonStatsCard />
+                <SkeletonStatsCard />
+                <SkeletonStatsCard />
+              </div>
+              <div className="grid gap-6 xl:grid-cols-2">
+                <SkeletonCardLarge />
+                <SkeletonCardLarge />
+              </div>
+            </div>
+          ) : (
+            <>
+              {currentPage === 'dashboard' && <Dashboard onNavigate={navigateTo} />}
+              {currentPage === 'calendar' && <Calendar initialModal={openModal} onModalConsumed={() => setOpenModal(null)} />}
+              {currentPage === 'patients' && <Patients initialModal={openModal} onModalConsumed={() => setOpenModal(null)} />}
+              {currentPage === 'invoices' && <Invoices initialModal={openModal} onModalConsumed={() => setOpenModal(null)} />}
+              {currentPage === 'expenses' && <Expenses />}
+              {currentPage === 'admin' && isAdmin && <Admin />}
+            </>
+          )}
         </main>
       </div>
 

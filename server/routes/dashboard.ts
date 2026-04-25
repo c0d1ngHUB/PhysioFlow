@@ -25,9 +25,27 @@ function toLocalDateStr(d: Date): string {
   return `${yyyy}-${mm}-${dd}`;
 }
 
+function getWeekRange(dateValue: string) {
+  const base = new Date(`${dateValue}T12:00:00`);
+  const day = base.getDay();
+  const mondayOffset = day === 0 ? -6 : 1 - day;
+  const monday = new Date(base);
+  monday.setDate(base.getDate() + mondayOffset);
+  const sunday = new Date(monday);
+  sunday.setDate(monday.getDate() + 6);
+
+  return {
+    weekStart: toLocalDateStr(monday),
+    weekEnd: toLocalDateStr(sunday),
+  };
+}
+
 // Get dashboard statistics
-router.get('/', (_req, res) => {
+router.get('/', (req, res) => {
   try {
+    const selectedDate = typeof req.query.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(req.query.date)
+      ? req.query.date
+      : todayStr();
     const today = todayStr();
     
     // Calculate date range for "this month"
@@ -41,14 +59,7 @@ router.get('/', (_req, res) => {
     const lastMonthEnd = toLocalDateStr(new Date(thisMonthStartAsDate.getTime() - 86400000));
 
     // Week range (Monday to Sunday)
-    const weekStart = new Date(now);
-    const dayOfWeek = weekStart.getDay();
-    const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
-    weekStart.setDate(weekStart.getDate() + mondayOffset);
-    const weekStartStr = toLocalDateStr(weekStart);
-    const weekFromNow = new Date(now);
-    weekFromNow.setDate(weekFromNow.getDate() + 7);
-    const weekFromNowStr = toLocalDateStr(weekFromNow);
+    const { weekStart, weekEnd } = getWeekRange(selectedDate);
 
     // --- Query 1: Aggregate counts in a single query ---
     const stats = db.prepare(`
@@ -57,7 +68,7 @@ router.get('/', (_req, res) => {
         (SELECT COUNT(*) FROM appointments WHERE date >= ? AND date <= ? AND date != ? AND status != 'cancelled') AS upcoming_appointments,
         (SELECT COUNT(*) FROM patients) AS total_patients,
         (SELECT COUNT(*) FROM appointments WHERE date >= ? AND date <= ? AND status != 'cancelled') AS this_month_appointments
-    `).get(today, today, weekFromNowStr, today, thisMonthStart, today) as {
+    `).get(today, today, weekEnd, today, thisMonthStart, today) as {
       today_appointments: number;
       upcoming_appointments: number;
       total_patients: number;
@@ -118,7 +129,7 @@ router.get('/', (_req, res) => {
       WHERE a.date >= ? AND a.date <= ?
         AND a.status != 'cancelled'
       ORDER BY a.date, a.time_start
-    `).all(weekStartStr, weekFromNowStr);
+    `).all(today > weekStart ? today : weekStart, weekEnd);
 
     res.json({
       success: true,
@@ -132,6 +143,8 @@ router.get('/', (_req, res) => {
         this_month_appointments: stats.this_month_appointments,
         this_month_revenue: revenue.this_month,
         last_month_revenue: revenue.last_month,
+        week_start: weekStart,
+        week_end: weekEnd,
         upcoming_this_week: upcomingThisWeek,
         six_months_revenue: sixMonthsRevenue
       }

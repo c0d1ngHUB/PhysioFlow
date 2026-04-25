@@ -1,12 +1,14 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Patient, Therapist, Voucher } from '../types';
 import { ConfirmModal, Modal, showToast } from '../components/ui';
+import { useAuth } from '../auth';
 
 type AdminTab = 'therapists' | 'vouchers';
 
 const therapistPalette = ['#2563EB', '#059669', '#F59E0B', '#DC2626', '#7C3AED', '#DB2777'];
 
 export default function Admin() {
+  const { user } = useAuth();
   const [tab, setTab] = useState<AdminTab>('therapists');
   const [patients, setPatients] = useState<Patient[]>([]);
   const [therapists, setTherapists] = useState<Therapist[]>([]);
@@ -19,6 +21,7 @@ export default function Admin() {
 
   const [voucherModalOpen, setVoucherModalOpen] = useState(false);
   const [editingVoucher, setEditingVoucher] = useState<Voucher | null>(null);
+  const [voucherActionId, setVoucherActionId] = useState<number | null>(null);
   const [voucherForm, setVoucherForm] = useState({
     code: '',
     patient_id: '',
@@ -31,8 +34,13 @@ export default function Admin() {
   const [confirmAction, setConfirmAction] = useState<{ message: string; onConfirm: () => void } | null>(null);
 
   useEffect(() => {
+    if (user?.role !== 'admin') {
+      setLoading(false);
+      return;
+    }
+
     void Promise.all([fetchPatients(), fetchTherapists(), fetchVouchers()]).finally(() => setLoading(false));
-  }, []);
+  }, [user?.role]);
 
   const unusedVouchers = useMemo(() => vouchers.filter((voucher) => !voucher.used), [vouchers]);
 
@@ -136,19 +144,24 @@ export default function Admin() {
   }
 
   async function toggleVoucherUsed(voucher: Voucher) {
-    const res = await fetch(`/api/vouchers/${voucher.id}/use`, {
-      method: 'POST',
-      credentials: 'include',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ used: !voucher.used }),
-    });
-    const data = await res.json();
-    if (!data.success) {
-      showToast(data.error || 'Status konnte nicht geändert werden', 'error');
-      return;
+    setVoucherActionId(voucher.id ?? null);
+    try {
+      const res = await fetch(`/api/vouchers/${voucher.id}/use`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ used: !voucher.used }),
+      });
+      const data = await res.json();
+      if (!data.success) {
+        showToast(data.error || 'Status konnte nicht geändert werden', 'error');
+        return;
+      }
+      await fetchVouchers();
+      showToast(!voucher.used ? 'Gutschein als eingelöst markiert' : 'Gutschein wieder als offen markiert', 'success');
+    } finally {
+      setVoucherActionId(null);
     }
-    await fetchVouchers();
-    showToast(!voucher.used ? 'Gutschein als eingelöst markiert' : 'Gutschein wieder als offen markiert', 'success');
   }
 
   async function deleteTherapist(id: number) {
@@ -175,6 +188,15 @@ export default function Admin() {
 
   if (loading) {
     return <div className="flex min-h-[40vh] items-center justify-center text-slate-500">Laden…</div>;
+  }
+
+  if (user?.role !== 'admin') {
+    return (
+      <div className="rounded-2xl border border-amber-200 bg-amber-50 p-6 text-amber-900 shadow-sm">
+        <p className="text-sm font-medium uppercase tracking-wide text-amber-700">Keine Berechtigung</p>
+        <h2 className="mt-1 text-2xl font-semibold">Dieser Bereich ist nur für Administrator:innen verfügbar.</h2>
+      </div>
+    );
   }
 
   return (
@@ -315,8 +337,12 @@ export default function Admin() {
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex justify-end gap-2">
-                          <button onClick={() => toggleVoucherUsed(voucher)} className="rounded-lg bg-slate-100 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-200">
-                            {voucher.used ? 'Reaktivieren' : 'Einlösen'}
+                          <button
+                            onClick={() => toggleVoucherUsed(voucher)}
+                            disabled={voucherActionId === voucher.id}
+                            className="rounded-lg bg-slate-100 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-200 disabled:cursor-not-allowed disabled:opacity-60"
+                          >
+                            {voucherActionId === voucher.id ? 'Wird verarbeitet…' : voucher.used ? 'Reaktivieren' : 'Einlösen'}
                           </button>
                           <button onClick={() => openVoucherModal(voucher)} className="rounded-lg bg-white px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-100">
                             Bearbeiten

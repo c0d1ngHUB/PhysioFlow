@@ -10,6 +10,7 @@ interface PatientsProps {
 export default function Patients({ initialModal, onModalConsumed }: PatientsProps) {
   const [patients, setPatients] = useState<Patient[]>([]);
   const [loading, setLoading] = useState(true);
+  const [patientsError, setPatientsError] = useState('');
   const [confirmAction, setConfirmAction] = useState<{ onConfirm: () => void; message: string } | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [showModal, setShowModal] = useState(false);
@@ -18,6 +19,7 @@ export default function Patients({ initialModal, onModalConsumed }: PatientsProp
   const [historyPatient, setHistoryPatient] = useState<Patient | null>(null);
   const [historyData, setHistoryData] = useState<{ appointments: { id: number; date: string; time_start: string; time_end: string; treatment_type: string; notes: string }[]; invoices: { id: number; invoice_number: string; created_at: string; total: number; paid: boolean }[] }>({ appointments: [], invoices: [] });
   const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyError, setHistoryError] = useState('');
 
   const [formData, setFormData] = useState({
     first_name: '',
@@ -43,18 +45,23 @@ export default function Patients({ initialModal, onModalConsumed }: PatientsProp
   }, []);
 
   const fetchPatients = async () => {
+    setPatientsError('');
     try {
       const res = await fetch('/api/patients', { credentials: 'include' });
       if (res.status === 401) return;
       const data = await res.json();
       if (data.success) {
         setPatients(data.data);
+        setLoading(false);
+        return;
       }
-    } catch (error) {
-      console.error('Failed to fetch patients:', error);
-    } finally {
-      setLoading(false);
+      setPatients([]);
+      setPatientsError(data.error || 'Patient:innen konnten nicht geladen werden.');
+    } catch {
+      setPatients([]);
+      setPatientsError('Patient:innen konnten nicht geladen werden.');
     }
+    setLoading(false);
   };
 
   const filteredPatients = patients.filter((p) => {
@@ -88,17 +95,21 @@ export default function Patients({ initialModal, onModalConsumed }: PatientsProp
     setHistoryPatient(patient);
     setShowHistory(true);
     setHistoryLoading(true);
+    setHistoryError('');
+    setHistoryData({ appointments: [], invoices: [] });
     try {
       const res = await fetch(`/api/patients/${patient.id}/history`, { credentials: 'include' });
       const data = await res.json();
       if (data.success) {
         setHistoryData({ appointments: data.data.appointments, invoices: data.data.invoices });
+        setHistoryLoading(false);
+        return;
       }
-    } catch (error) {
-      console.error('Failed to fetch history:', error);
-    } finally {
-      setHistoryLoading(false);
+      setHistoryError(data.error || 'Patientenhistorie konnte nicht geladen werden.');
+    } catch {
+      setHistoryError('Patientenhistorie konnte nicht geladen werden.');
     }
+    setHistoryLoading(false);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -184,6 +195,17 @@ export default function Patients({ initialModal, onModalConsumed }: PatientsProp
         <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400">🔍</span>
       </div>
 
+      {patientsError ? (
+        <div className="bg-white rounded-xl border border-red-200 p-12 text-center">
+          <span className="text-5xl mb-4 block">⚠️</span>
+          <p className="text-red-700 font-medium text-lg">Patient:innen konnten nicht geladen werden</p>
+          <p className="text-red-600 text-sm mt-2">{patientsError}</p>
+          <button onClick={() => { setLoading(true); void fetchPatients(); }} className="mt-4 px-6 py-2.5 bg-red-600 text-white rounded-lg font-medium hover:bg-red-700 transition-colors">
+            Erneut versuchen
+          </button>
+        </div>
+      ) : (
+        <>
       {/* Patient Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {filteredPatients.map((patient) => (
@@ -216,6 +238,8 @@ export default function Patients({ initialModal, onModalConsumed }: PatientsProp
           <p className="text-gray-400 text-sm mt-2">{searchTerm ? 'Versuchen Sie einen anderen Suchbegriff' : 'Starten Sie mit dem ersten Patienten'}</p>
           {!searchTerm && <button onClick={() => openModal()} className="mt-4 px-6 py-2.5 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition-colors">+ Ersten Patienten anlegen</button>}
         </div>
+      )}
+        </>
       )}
 
       {/* Patient Edit/Create Modal — using unified Modal */}
@@ -276,7 +300,19 @@ export default function Patients({ initialModal, onModalConsumed }: PatientsProp
             </div>
 
             {historyLoading ? (
-              <div className="flex items-center justify-center h-48"><div className="w-8 h-8 border-2 border-blue-200 border-t-blue-600 rounded-full animate-spin"></div></div>
+              <div className="space-y-4">
+                <div className="h-28 rounded-xl border border-gray-200 bg-gray-50 animate-pulse" />
+                <div className="h-40 rounded-xl border border-gray-200 bg-gray-50 animate-pulse" />
+                <div className="h-40 rounded-xl border border-gray-200 bg-gray-50 animate-pulse" />
+              </div>
+            ) : historyError ? (
+              <div className="rounded-xl border border-red-200 bg-red-50 p-6 text-center">
+                <p className="font-medium text-red-800">Patientenhistorie konnte nicht geladen werden</p>
+                <p className="mt-2 text-sm text-red-700">{historyError}</p>
+                <button onClick={() => historyPatient && void openHistory(historyPatient)} className="mt-4 rounded-lg bg-white px-4 py-2 text-sm font-medium text-red-700 ring-1 ring-red-200 hover:bg-red-100">
+                  Erneut laden
+                </button>
+              </div>
             ) : (
               <>
                 {/* Patient Info */}

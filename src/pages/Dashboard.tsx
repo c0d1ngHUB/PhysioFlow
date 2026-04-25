@@ -16,15 +16,29 @@ interface DashboardProps {
   onNavigate: (page: Page, modal?: string | null) => void;
 }
 
+function WidgetError({ message, onRetry }: { message: string; onRetry: () => void }) {
+  return (
+    <div className="flex min-h-[140px] flex-col items-start justify-between rounded-xl border border-red-200 bg-red-50 p-5">
+      <div>
+        <p className="text-sm font-semibold text-red-800">Daten konnten nicht geladen werden</p>
+        <p className="mt-2 text-sm text-red-700">{message}</p>
+      </div>
+      <button onClick={onRetry} className="mt-4 rounded-lg bg-white px-3 py-2 text-sm font-medium text-red-700 ring-1 ring-red-200 hover:bg-red-100">
+        Erneut laden
+      </button>
+    </div>
+  );
+}
+
 export default function Dashboard({ onNavigate }: DashboardProps) {
   const [stats, setStats] = useState<ExtendedStats | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
   const [currentTime, setCurrentTime] = useState(new Date());
 
   const [units, setUnits] = useState('10');
   const [rate, setRate] = useState('50');
   const [calculatedTotal, setCalculatedTotal] = useState(500);
-  const [savedDraft, setSavedDraft] = useState(false);
 
   useEffect(() => {
     fetchStats();
@@ -33,17 +47,24 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
   }, []);
 
   const fetchStats = async () => {
+    setError('');
     try {
-      const res = await fetch('/api/dashboard', { credentials: 'include' });
+      const today = new Date();
+      const selectedDate = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+      const res = await fetch(`/api/dashboard?date=${selectedDate}`, { credentials: 'include' });
       const data = await res.json();
       if (data.success) {
         setStats(data.data);
+        setLoading(false);
+        return;
       }
-    } catch (error) {
-      console.error('Failed to fetch stats:', error);
-    } finally {
-      setLoading(false);
+      setStats(null);
+      setError(data.error || 'Das Dashboard ist derzeit nicht erreichbar.');
+    } catch {
+      setStats(null);
+      setError('Das Dashboard konnte nicht geladen werden. Bitte versuchen Sie es erneut.');
     }
+    setLoading(false);
   };
 
   useEffect(() => {
@@ -51,11 +72,6 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
     // const r = parseFloat(rate) || 0;
     setCalculatedTotal((parseFloat(units) || 0) * (parseFloat(rate) || 0));
   }, [units, rate]);
-
-  const handleSaveDraft = () => {
-    setSavedDraft(true);
-    setTimeout(() => setSavedDraft(false), 2000);
-  };
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('de-AT', {
@@ -104,6 +120,15 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
 
       {/* Stats Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        {error ? (
+          <>
+            <WidgetError message={error} onRetry={fetchStats} />
+            <WidgetError message={error} onRetry={fetchStats} />
+            <WidgetError message={error} onRetry={fetchStats} />
+            <WidgetError message={error} onRetry={fetchStats} />
+          </>
+        ) : (
+          <>
         <div className="bg-white rounded-xl border border-gray-200 p-5 hover:border-blue-300 transition-colors shadow-sm">
           <div className="flex items-center justify-between">
             <div>
@@ -149,10 +174,20 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
             <div className="w-10 h-10 bg-purple-50 rounded-lg flex items-center justify-center text-lg">👥</div>
           </div>
         </div>
+          </>
+        )}
       </div>
 
       {/* Revenue & Quick Stats Row */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        {error ? (
+          <>
+            <WidgetError message={error} onRetry={fetchStats} />
+            <WidgetError message={error} onRetry={fetchStats} />
+            <WidgetError message={error} onRetry={fetchStats} />
+          </>
+        ) : (
+          <>
         {/* Monthly Revenue Card */}
         <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
           <div className="flex items-center justify-between mb-3">
@@ -200,6 +235,8 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
           <p className="text-3xl font-semibold text-amber-600">{formatCurrency(stats?.unpaid_invoices_total || 0)}</p>
           <p className="text-xs text-gray-400 mt-1">{stats?.unpaid_invoices || 0} unbezahlte Rechnungen</p>
         </div>
+          </>
+        )}
       </div>
 
       {/* Two Column Layout */}
@@ -210,13 +247,15 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
             <div className="flex items-center justify-between">
               <div>
                 <h3 className="font-semibold text-gray-900">Heutige Termine</h3>
-                <p className="text-sm text-gray-500">{stats?.today_appointments || 0} Termine geplant</p>
+                <p className="text-sm text-gray-500">{error ? 'Daten derzeit nicht verfügbar' : `${stats?.today_appointments || 0} Termine geplant`}</p>
               </div>
               <span className="text-lg">📋</span>
             </div>
           </div>
           <div className="p-5">
-            {stats?.today_details && stats.today_details.length > 0 ? (
+            {error ? (
+              <WidgetError message={error} onRetry={fetchStats} />
+            ) : stats?.today_details && stats.today_details.length > 0 ? (
               <div className="space-y-3">
                 {stats.today_details.map((apt) => (
                   <div
@@ -256,13 +295,15 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
             <div className="flex items-center justify-between">
               <div>
                 <h3 className="font-semibold text-gray-900">Diese Woche</h3>
-                <p className="text-sm text-gray-500">{stats?.upcoming_this_week?.length || 0} anstehende Termine</p>
+                <p className="text-sm text-gray-500">{error ? 'Daten derzeit nicht verfügbar' : `${stats?.upcoming_this_week?.length || 0} anstehende Termine`}</p>
               </div>
               <span className="text-lg">📆</span>
             </div>
           </div>
           <div className="p-5">
-            {stats?.upcoming_this_week && stats.upcoming_this_week.length > 0 ? (
+            {error ? (
+              <WidgetError message={error} onRetry={fetchStats} />
+            ) : stats?.upcoming_this_week && stats.upcoming_this_week.length > 0 ? (
               <div className="space-y-2 max-h-72 overflow-y-auto">
                 {stats.upcoming_this_week.map((apt: any, idx: number) => {
                   const date = new Date(apt.date + 'T00:00:00');
@@ -295,7 +336,9 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
       </div>
 
       {/* Revenue Chart */}
-      {stats?.six_months_revenue && stats.six_months_revenue.length > 0 && (
+      {error ? (
+        <WidgetError message={error} onRetry={fetchStats} />
+      ) : stats?.six_months_revenue && stats.six_months_revenue.length > 0 && (
         <div className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm">
           <div className="px-5 py-4 border-b border-gray-100 bg-gray-50">
             <div className="flex items-center justify-between">
@@ -385,14 +428,9 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
               </p>
             </div>
 
-            <button
-              onClick={handleSaveDraft}
-              className={`w-full py-2.5 rounded-lg font-medium text-white transition-colors ${
-                savedDraft ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-blue-600 hover:bg-blue-700'
-              }`}
-            >
-              {savedDraft ? '✓ Gespeichert!' : 'Als Entwurf speichern'}
-            </button>
+            <div className="rounded-lg border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-900">
+              Diese Berechnung dient nur als Sofortvorschau und wird nicht gespeichert. Honorarnoten legen Sie bitte über den Bereich Finanzen an.
+            </div>
           </div>
         </div>
 

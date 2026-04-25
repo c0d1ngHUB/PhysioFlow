@@ -61,30 +61,51 @@ export default function Invoices({ initialModal, onModalConsumed }: InvoicesProp
   }, [formData.patient_id]);
 
   async function fetchInvoices() {
-    const params = new URLSearchParams();
-    if (filterPaid === 'paid') params.set('paid', 'true');
-    if (filterPaid === 'unpaid') params.set('paid', 'false');
+    try {
+      const params = new URLSearchParams();
+      if (filterPaid === 'paid') params.set('paid', 'true');
+      if (filterPaid === 'unpaid') params.set('paid', 'false');
 
-    const res = await fetch(`/api/invoices${params.toString() ? `?${params.toString()}` : ''}`, { credentials: 'include' });
-    const data = await res.json();
-    if (data.success) {
-      setInvoices(data.data);
+      const res = await fetch(`/api/invoices${params.toString() ? `?${params.toString()}` : ''}`, { credentials: 'include' });
+      const data = await res.json();
+      if (data.success) {
+        setInvoices(data.data);
+        return;
+      }
+
+      showToast(data.error || 'Honorarnoten konnten nicht geladen werden', 'error');
+    } catch {
+      showToast('Honorarnoten konnten nicht geladen werden', 'error');
     }
   }
 
   async function fetchPatients() {
-    const res = await fetch('/api/patients', { credentials: 'include' });
-    const data = await res.json();
-    if (data.success) {
-      setPatients(data.data);
+    try {
+      const res = await fetch('/api/patients', { credentials: 'include' });
+      const data = await res.json();
+      if (data.success) {
+        setPatients(data.data);
+        return;
+      }
+
+      showToast(data.error || 'Patient:innen konnten nicht geladen werden', 'error');
+    } catch {
+      showToast('Patient:innen konnten nicht geladen werden', 'error');
     }
   }
 
   async function fetchAppointments(patientId: string) {
-    const res = await fetch(`/api/appointments?patient_id=${patientId}`, { credentials: 'include' });
-    const data = await res.json();
-    if (data.success) {
-      setAppointments(data.data);
+    try {
+      const res = await fetch(`/api/appointments?patient_id=${patientId}`, { credentials: 'include' });
+      const data = await res.json();
+      if (data.success) {
+        setAppointments(data.data);
+        return;
+      }
+
+      showToast(data.error || 'Termine konnten nicht geladen werden', 'error');
+    } catch {
+      showToast('Termine konnten nicht geladen werden', 'error');
     }
   }
 
@@ -125,44 +146,56 @@ export default function Invoices({ initialModal, onModalConsumed }: InvoicesProp
   }
 
   async function togglePaid(invoice: Invoice) {
-    const res = await fetch(`/api/invoices/${invoice.id}/paid`, {
-      method: 'PUT',
-      credentials: 'include',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ paid: !invoice.paid }),
-    });
-    const data = await res.json();
-    if (!data.success) {
-      showToast(data.error || 'Status konnte nicht geändert werden', 'error');
-      return;
+    try {
+      const res = await fetch(`/api/invoices/${invoice.id}/paid`, {
+        method: 'PUT',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ paid: !invoice.paid }),
+      });
+      const data = await res.json();
+      if (!data.success) {
+        showToast(data.error || 'Status konnte nicht geändert werden', 'error');
+        return;
+      }
+      await fetchInvoices();
+      showToast(!invoice.paid ? 'Als bezahlt markiert' : 'Wieder als offen markiert', 'success');
+    } catch {
+      showToast('Status konnte nicht geändert werden', 'error');
     }
-    await fetchInvoices();
-    showToast(!invoice.paid ? 'Als bezahlt markiert' : 'Wieder als offen markiert', 'success');
   }
 
   async function escalateDunning(invoice: Invoice) {
-    const res = await fetch(`/api/invoices/${invoice.id}/dunning/escalate`, {
-      method: 'POST',
-      credentials: 'include',
-    });
-    const data = await res.json();
-    if (!data.success) {
-      showToast(data.error || 'Mahnstufe konnte nicht erhöht werden', 'error');
-      return;
+    try {
+      const res = await fetch(`/api/invoices/${invoice.id}/dunning/escalate`, {
+        method: 'POST',
+        credentials: 'include',
+      });
+      const data = await res.json();
+      if (!data.success) {
+        showToast(data.error || 'Mahnstufe konnte nicht erhöht werden', 'error');
+        return;
+      }
+      await fetchInvoices();
+      showToast(`Mahnstufe erhöht: ${dunningLabel[Math.min(invoice.dunning_level + 1, 3) as Invoice['dunning_level']]}`, 'success');
+    } catch {
+      showToast('Mahnstufe konnte nicht erhöht werden', 'error');
     }
-    await fetchInvoices();
-    showToast(`Mahnstufe erhöht: ${dunningLabel[Math.min(invoice.dunning_level + 1, 3) as Invoice['dunning_level']]}`, 'success');
   }
 
   async function deleteInvoice(id: number) {
-    const res = await fetch(`/api/invoices/${id}`, { method: 'DELETE', credentials: 'include' });
-    const data = await res.json();
-    if (!data.success) {
-      showToast(data.error || 'Honorarnote konnte nicht gelöscht werden', 'error');
-      return;
+    try {
+      const res = await fetch(`/api/invoices/${id}`, { method: 'DELETE', credentials: 'include' });
+      const data = await res.json();
+      if (!data.success) {
+        showToast(data.error || 'Honorarnote konnte nicht gelöscht werden', 'error');
+        return;
+      }
+      await fetchInvoices();
+      showToast('Honorarnote gelöscht', 'success');
+    } catch {
+      showToast('Honorarnote konnte nicht gelöscht werden', 'error');
     }
-    await fetchInvoices();
-    showToast('Honorarnote gelöscht', 'success');
   }
 
   const unpaidInvoices = useMemo(() => invoices.filter((invoice) => !invoice.paid), [invoices]);
