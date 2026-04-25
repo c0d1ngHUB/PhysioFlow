@@ -5,3 +5,4 @@ data/*.db
 .env.local
 *.log
 .DS_Store
+backups/
