@@ -4,14 +4,26 @@ import { requireRole } from '../utils/auth.js';
 import { respondWithServerError } from '../utils/httpErrors.js';
 
 const router = Router();
+type SqlParam = string | number | null;
+
+interface ExpenseCategoryRow {
+  category: string;
+}
+
+function getSingleQueryValue(value: unknown): string | undefined {
+  return typeof value === 'string' ? value : undefined;
+}
 
 // Get all expenses
 router.get('/', (req, res) => {
   try {
-    const { category, from, to, limit = 100 } = req.query;
+    const category = getSingleQueryValue(req.query.category);
+    const from = getSingleQueryValue(req.query.from);
+    const to = getSingleQueryValue(req.query.to);
+    const limit = getSingleQueryValue(req.query.limit) ?? '100';
     
     let sql = 'SELECT * FROM expenses WHERE 1=1';
-    const params: any[] = [];
+    const params: SqlParam[] = [];
     
     if (category) {
       sql += ' AND category = ?';
@@ -38,7 +50,7 @@ router.get('/', (req, res) => {
         COALESCE(SUM(CASE WHEN strftime('%Y-%m', date) = strftime('%Y-%m', 'now') THEN amount ELSE 0 END), 0) as month_total
       FROM expenses WHERE 1=1
     `;
-    const totalsParams: any[] = [];
+    const totalsParams: SqlParam[] = [];
     
     if (category) {
       totalsSql += ' AND category = ?';
@@ -69,10 +81,10 @@ router.get('/', (req, res) => {
 });
 
 // Get categories
-router.get('/categories', (req, res) => {
+router.get('/categories', (_req, res) => {
   try {
-    const categories = db.prepare('SELECT DISTINCT category FROM expenses ORDER BY category').all();
-    res.json({ success: true, data: categories.map((c: any) => c.category) });
+    const categories = db.prepare('SELECT DISTINCT category FROM expenses ORDER BY category').all() as ExpenseCategoryRow[];
+    res.json({ success: true, data: categories.map((category) => category.category) });
   } catch (error) {
     respondWithServerError(res, error, 'Fehler beim Laden der Ausgabenkategorien:', 'Ausgabenkategorien konnten nicht geladen werden.');
   }

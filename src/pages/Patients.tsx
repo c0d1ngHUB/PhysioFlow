@@ -38,7 +38,7 @@ export default function Patients({ initialModal, onModalConsumed }: PatientsProp
       openModal();
       onModalConsumed();
     }
-  }, [initialModal]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [initialModal, onModalConsumed]);
 
   useEffect(() => {
     fetchPatients();

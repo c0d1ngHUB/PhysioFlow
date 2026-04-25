@@ -6,6 +6,11 @@ import { requireRole } from '../utils/auth.js';
 import { respondWithServerError } from '../utils/httpErrors.js';
 
 const router = Router();
+type SqlParam = string | number | null;
+
+function getSingleQueryValue(value: unknown): string | undefined {
+  return typeof value === 'string' ? value : undefined;
+}
 
 const DUNNING_LABELS: Record<number, string> = {
   0: 'Keine Mahnung',
@@ -46,7 +51,8 @@ function generateInvoiceNumber(): string {
 
 // Get all invoices
 router.get('/', (req, res) => {
-  const { paid, patient_id } = req.query;
+  const paid = getSingleQueryValue(req.query.paid);
+  const patientId = getSingleQueryValue(req.query.patient_id);
   
   let query = `
     SELECT i.*, p.first_name || ' ' || p.last_name as patient_name,
@@ -55,16 +61,16 @@ router.get('/', (req, res) => {
     JOIN patients p ON i.patient_id = p.id
     WHERE 1=1
   `;
-  const params: any[] = [];
+  const params: SqlParam[] = [];
   
   if (paid !== undefined) {
     query += ' AND i.paid = ?';
     params.push(paid === 'true' ? 1 : 0);
   }
   
-  if (patient_id) {
+  if (patientId) {
     query += ' AND i.patient_id = ?';
-    params.push(patient_id);
+    params.push(patientId);
   }
   
   query += ' ORDER BY i.created_at DESC';

@@ -17,6 +17,8 @@ interface TherapistLane {
   color: string;
 }
 
+type AppointmentsByTherapist = Map<string, Appointment[]>;
+
 const treatmentTypes = ['Physiotherapie', 'Massage', 'Training', 'Beratung', 'Folgekontrolle'];
 
 function getWeekStart(dateStr: string): Date {
@@ -328,24 +330,60 @@ export default function Calendar({ initialModal, onModalConsumed }: CalendarProp
     () => buildTimeSlots(timeRange.startMinutes, timeRange.endMinutes),
     [timeRange.endMinutes, timeRange.startMinutes],
   );
+  const appointmentsByDateAndTherapist = useMemo(() => {
+    const lookup = new Map<string, AppointmentsByTherapist>();
 
-  function appointmentsForDate(dateStr: string) {
-    return appointments
-      .filter((appointment) => appointment.date === dateStr && appointment.status !== 'cancelled')
+    for (const appointment of appointments) {
+      if (appointment.status === 'cancelled') {
+        continue;
+      }
+
+      const therapistKey = appointment.therapist_id ? String(appointment.therapist_id) : '';
+      const appointmentsByTherapist = lookup.get(appointment.date) ?? new Map<string, Appointment[]>();
+      const therapistAppointments = appointmentsByTherapist.get(therapistKey) ?? [];
+
+      therapistAppointments.push(appointment);
+      appointmentsByTherapist.set(therapistKey, therapistAppointments);
+      lookup.set(appointment.date, appointmentsByTherapist);
+    }
+
+    for (const appointmentsByTherapist of lookup.values()) {
+      for (const therapistAppointments of appointmentsByTherapist.values()) {
+        therapistAppointments.sort((left, right) => left.time_start.localeCompare(right.time_start));
+      }
+    }
+
+    return lookup;
+  }, [appointments]);
+
+  function getAppointmentsForDate(dateStr: string) {
+    const appointmentsByTherapist = appointmentsByDateAndTherapist.get(dateStr);
+    if (!appointmentsByTherapist) {
+      return [];
+    }
+
+    return Array.from(appointmentsByTherapist.values())
+      .flat()
       .sort((left, right) => left.time_start.localeCompare(right.time_start));
   }
 
-  function appointmentForSlot(dateStr: string, time: string, therapistId?: string) {
-    return appointmentsForDate(dateStr).find((appointment) => {
-      if (therapistId !== undefined) {
-        const appointmentTherapistId = appointment.therapist_id ? String(appointment.therapist_id) : '';
-        if (appointmentTherapistId !== therapistId) {
-          return false;
-        }
-      }
+  function getAppointmentsForDateAndTherapist(dateStr: string, therapistId?: string) {
+    const appointmentsByTherapist = appointmentsByDateAndTherapist.get(dateStr);
+    if (!appointmentsByTherapist) {
+      return [];
+    }
 
-      return appointment.time_start <= time && appointment.time_end > time;
-    });
+    if (therapistId === undefined) {
+      return getAppointmentsForDate(dateStr);
+    }
+
+    return appointmentsByTherapist.get(therapistId) ?? [];
+  }
+
+  function appointmentForSlot(dateStr: string, time: string, therapistId?: string) {
+    return getAppointmentsForDateAndTherapist(dateStr, therapistId).find(
+      (appointment) => appointment.time_start <= time && appointment.time_end > time,
+    );
   }
 
   function openCreateModal(date: string, timeStart = '09:00', therapistIdOverride?: string) {
@@ -843,7 +881,7 @@ export default function Calendar({ initialModal, onModalConsumed }: CalendarProp
             <div className="grid grid-cols-7">
               {monthGrid.map(({ date, currentMonth }) => {
                 const dateStr = toLocalDateStr(date);
-                const dayAppointments = appointmentsForDate(dateStr);
+                const dayAppointments = getAppointmentsForDate(dateStr);
                 const isToday = dateStr === today;
 
                 return (

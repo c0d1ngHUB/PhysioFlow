@@ -5,7 +5,7 @@ import rateLimit from 'express-rate-limit';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import path from 'path';
-import { fileURLToPath } from 'url';
+import type { RequestHandler } from 'express';
 
 import db from './db/index.js';
 
@@ -21,8 +21,6 @@ import { requireRole } from './utils/auth.js';
 import { respondWithServerError } from './utils/httpErrors.js';
 
 dotenv.config();
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -128,6 +126,34 @@ const loginLimiter = rateLimit({
   legacyHeaders: false,
 });
 
+function createApiRateLimiter(max: number, message: string) {
+  return rateLimit({
+    windowMs: 60 * 1000,
+    max,
+    message: { success: false, error: message, code: 'rate_limited' },
+    standardHeaders: true,
+    legacyHeaders: false,
+  });
+}
+
+function applyLimiterForMethods(methods: string[], limiter: RequestHandler): RequestHandler {
+  const allowedMethods = new Set(methods);
+
+  return (req, res, next) => {
+    if (!allowedMethods.has(req.method)) {
+      next();
+      return;
+    }
+
+    limiter(req, res, next);
+  };
+}
+
+const pdfGenerationLimiter = createApiRateLimiter(20, 'Zu viele PDF-Anfragen. Bitte in einer Minute erneut versuchen.');
+const iCalExportLimiter = createApiRateLimiter(10, 'Zu viele iCal-Exporte. Bitte in einer Minute erneut versuchen.');
+const smsLimiter = createApiRateLimiter(10, 'Zu viele SMS-Anfragen. Bitte in einer Minute erneut versuchen.');
+const crudLimiter = createApiRateLimiter(60, 'Zu viele Änderungsanfragen. Bitte in einer Minute erneut versuchen.');
+
 app.post('/api/auth/login', express.json(), loginLimiter, async (req: express.Request, res: express.Response) => {
   const { username, password } = req.body || {};
   const ip = req.ip || req.socket.remoteAddress || 'unknown';
@@ -209,6 +235,21 @@ app.post('/api/auth/login', express.json(), loginLimiter, async (req: express.Re
   finalizeLogin({ username: user.username, role: user.role });
 });
 
+app.use('/api/invoices/:id/pdf', applyLimiterForMethods(['GET'], pdfGenerationLimiter));
+app.use('/api/appointments/ical', applyLimiterForMethods(['GET'], iCalExportLimiter));
+app.use('/api/sms', applyLimiterForMethods(['POST'], smsLimiter));
+app.use(
+  [
+    '/api/patients',
+    '/api/appointments',
+    '/api/invoices',
+    '/api/expenses',
+    '/api/therapists',
+    '/api/vouchers',
+  ],
+  applyLimiterForMethods(['POST', 'PUT', 'PATCH', 'DELETE'], crudLimiter),
+);
+
 app.post('/api/auth/logout', (req: express.Request, res: express.Response) => {
   req.session.destroy(() => {
     res.json({ success: true });
@@ -253,7 +294,7 @@ if (process.env.NODE_ENV === 'production') {
   const distPath = path.resolve(process.cwd(), 'dist');
   console.log(`📁 Serving static files from: ${distPath}`);
   app.use(express.static(distPath));
-  app.get(/.*/, (req: express.Request, res: express.Response) => {
+  app.get(/.*/, (_req: express.Request, res: express.Response) => {
     res.sendFile(path.join(distPath, 'index.html'));
   });
 }

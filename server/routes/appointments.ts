@@ -4,14 +4,7 @@ import { requireRole } from '../utils/auth.js';
 import { respondWithServerError } from '../utils/httpErrors.js';
 
 const router = Router();
-
-function toDateOnlyString(value: string): string {
-  const date = new Date(`${value}T12:00:00`);
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-}
+type SqlParam = string | number | null;
 
 function toLocalDateStr(date: Date): string {
   const year = date.getFullYear();
@@ -47,9 +40,16 @@ function escapeIcs(value: string): string {
     .replace(/;/g, '\\;');
 }
 
+function getSingleQueryValue(value: unknown): string | undefined {
+  return typeof value === 'string' ? value : undefined;
+}
+
 // Get all appointments (with optional date/week/month filter)
 router.get('/', (req, res) => {
-  const { date, patient_id, therapist_id, view } = req.query;
+  const date = getSingleQueryValue(req.query.date);
+  const patientId = getSingleQueryValue(req.query.patient_id);
+  const therapistId = getSingleQueryValue(req.query.therapist_id);
+  const view = getSingleQueryValue(req.query.view);
 
   let query = `
     SELECT
@@ -63,7 +63,7 @@ router.get('/', (req, res) => {
     LEFT JOIN therapists t ON a.therapist_id = t.id
     WHERE 1=1
   `;
-  const params: any[] = [];
+  const params: SqlParam[] = [];
 
   if (date && !view) {
     // Legacy: single date filter (backward compat)
@@ -88,14 +88,14 @@ router.get('/', (req, res) => {
     params.push(date);
   }
 
-  if (patient_id) {
+  if (patientId) {
     query += ' AND a.patient_id = ?';
-    params.push(patient_id);
+    params.push(patientId);
   }
 
-  if (therapist_id) {
+  if (therapistId) {
     query += ' AND a.therapist_id = ?';
-    params.push(therapist_id);
+    params.push(therapistId);
   }
   
   query += ' ORDER BY a.date, a.time_start';
@@ -317,7 +317,7 @@ router.put('/:id', (req, res) => {
 // Cancel appointment
 router.post('/:id/cancel', (req, res) => {
   try {
-    const existing = db.prepare('SELECT * FROM appointments WHERE id = ?').get(req.params.id);
+    const existing = db.prepare('SELECT status FROM appointments WHERE id = ?').get(req.params.id) as { status: string } | undefined;
     if (!existing) {
       return res.status(404).json({ success: false, error: 'Termin nicht gefunden' });
     }

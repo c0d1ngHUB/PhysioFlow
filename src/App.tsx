@@ -1,13 +1,22 @@
-import { useState, useEffect } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import Dashboard from './pages/Dashboard';
-import Calendar from './pages/Calendar';
 import Patients from './pages/Patients';
-import Invoices from './pages/Invoices';
-import Expenses from './pages/Expenses';
-import Admin from './pages/Admin';
 import { AuthProvider, useAuth } from './auth.tsx';
 import { useNavigation, type Page } from './navigation';
 import { SkeletonCardLarge, SkeletonStatsCard, ToastContainer } from './components/ui';
+
+const Calendar = lazy(() => import('./pages/Calendar'));
+const Invoices = lazy(() => import('./pages/Invoices'));
+const Expenses = lazy(() => import('./pages/Expenses'));
+const Admin = lazy(() => import('./pages/Admin'));
+
+function PageSpinner() {
+  return (
+    <div className="flex min-h-[40vh] items-center justify-center">
+      <div className="h-10 w-10 animate-spin rounded-full border-4 border-slate-200 border-t-blue-600" />
+    </div>
+  );
+}
 
 // =============================================================================
 // Login Page
@@ -78,10 +87,6 @@ function AppContent() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [pageTransitionLoading, setPageTransitionLoading] = useState(false);
   const isAdmin = user?.role === 'admin';
-
-  useEffect(() => {
-    if (!openModal) return;
-  }, [currentPage, openModal]);
 
   useEffect(() => {
     if (!loading && authenticated && !isAdmin && currentPage === 'admin') {
@@ -280,14 +285,14 @@ function AppContent() {
               </div>
             </div>
           ) : (
-            <>
+            <Suspense fallback={<PageSpinner />}>
               {currentPage === 'dashboard' && <Dashboard onNavigate={navigateTo} />}
               {currentPage === 'calendar' && <Calendar initialModal={openModal} onModalConsumed={() => setOpenModal(null)} />}
               {currentPage === 'patients' && <Patients initialModal={openModal} onModalConsumed={() => setOpenModal(null)} />}
               {currentPage === 'invoices' && <Invoices initialModal={openModal} onModalConsumed={() => setOpenModal(null)} />}
               {currentPage === 'expenses' && <Expenses />}
               {currentPage === 'admin' && isAdmin && <Admin />}
-            </>
+            </Suspense>
           )}
         </main>
       </div>

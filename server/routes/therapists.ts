@@ -1,10 +1,18 @@
+import type { NextFunction, Request, Response } from 'express';
 import { Router } from 'express';
 import db from '../db/index.js';
 import { respondWithServerError } from '../utils/httpErrors.js';
 
 const router = Router();
 
-function requireAdmin(req: any, res: any, next: any) {
+interface TherapistRecord {
+  id: number;
+  name: string;
+  color: string;
+  created_at: string;
+}
+
+function requireAdmin(req: Request, res: Response, next: NextFunction) {
   if (req.session.user?.role !== 'admin') {
     res.status(403).json({ success: false, error: 'Keine Berechtigung' });
     return;
@@ -14,7 +22,7 @@ function requireAdmin(req: any, res: any, next: any) {
 
 router.get('/', (_req, res) => {
   try {
-    const therapists = db.prepare('SELECT * FROM therapists ORDER BY name ASC').all();
+    const therapists = db.prepare('SELECT * FROM therapists ORDER BY name ASC').all() as TherapistRecord[];
     res.json({ success: true, data: therapists });
   } catch (error) {
     respondWithServerError(res, error, 'Fehler beim Laden der Therapeut:innen:', 'Therapeut:innen konnten nicht geladen werden.');
@@ -36,7 +44,7 @@ router.post('/', requireAdmin, (req, res) => {
       VALUES (?, ?)
     `).run(name.trim(), safeColor);
 
-    const therapist = db.prepare('SELECT * FROM therapists WHERE id = ?').get(result.lastInsertRowid);
+    const therapist = db.prepare('SELECT * FROM therapists WHERE id = ?').get(result.lastInsertRowid) as TherapistRecord | undefined;
     res.status(201).json({ success: true, data: therapist });
   } catch (error) {
     respondWithServerError(res, error, 'Fehler beim Erstellen der Therapeutin bzw. des Therapeuten:', 'Therapeut/in konnte nicht angelegt werden.');
@@ -62,7 +70,7 @@ router.put('/:id', requireAdmin, (req, res) => {
       return res.status(404).json({ success: false, error: 'Therapeut/in nicht gefunden' });
     }
 
-    const therapist = db.prepare('SELECT * FROM therapists WHERE id = ?').get(req.params.id);
+    const therapist = db.prepare('SELECT * FROM therapists WHERE id = ?').get(req.params.id) as TherapistRecord | undefined;
     res.json({ success: true, data: therapist });
   } catch (error) {
     respondWithServerError(res, error, 'Fehler beim Aktualisieren der Therapeutin bzw. des Therapeuten:', 'Therapeut/in konnte nicht aktualisiert werden.');

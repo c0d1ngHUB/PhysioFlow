@@ -56,8 +56,6 @@ router.get('/', (req, res) => {
     const now = new Date();
     const lastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
     const lastMonthStart = toLocalDateStr(lastMonth);
-    const thisMonthStartAsDate = new Date(now.getFullYear(), now.getMonth(), 1);
-    const lastMonthEnd = toLocalDateStr(new Date(thisMonthStartAsDate.getTime() - 86400000));
 
     // Week range (Monday to Sunday)
     const { weekStart, weekEnd } = getWeekRange(selectedDate);
