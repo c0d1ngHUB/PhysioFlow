@@ -1,8 +1,17 @@
 import { Router } from 'express';
 import db from '../db/index.js';
 import { respondWithServerError } from '../utils/httpErrors.js';
+import { requireAuth, requireRole } from '../utils/auth.js';
 
 const router = Router();
+
+// Alle Voucher-Routen erfordern Authentifizierung
+router.use(requireAuth);
+
+// POST, PUT, DELETE nur für Admin
+router.post('/', requireRole('admin'));
+router.put('/:id', requireRole('admin'));
+router.delete('/:id', requireRole('admin'));
 
 router.get('/', (_req, res) => {
   try {
