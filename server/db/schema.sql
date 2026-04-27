@@ -97,7 +97,12 @@ CREATE TABLE IF NOT EXISTS audit_logs (
     action TEXT NOT NULL,
     username TEXT,
     ip TEXT,
-    success INTEGER NOT NULL
+    success INTEGER NOT NULL,
+    user_id INTEGER,
+    entity_type TEXT,
+    entity_id TEXT,
+    old_value TEXT,
+    new_value TEXT
 );
 
 -- Therapists table

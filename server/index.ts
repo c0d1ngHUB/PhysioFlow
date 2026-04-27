@@ -3,6 +3,7 @@ import session from 'express-session';
 import bcrypt from 'bcrypt';
 import rateLimit from 'express-rate-limit';
 import cors from 'cors';
+import helmet from 'helmet';
 import dotenv from 'dotenv';
 import path from 'path';
 import type { RequestHandler } from 'express';
@@ -49,6 +50,32 @@ function isAllowedOrigin(origin?: string) {
 
   return ALLOWED_ORIGINS.includes(origin);
 }
+
+// ---------------------------------------------------------------------------
+// Helmet – security headers
+// ---------------------------------------------------------------------------
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      imgSrc: ["'self'", "data:"],
+      connectSrc: ["'self'"],
+      fontSrc: ["'self'"],
+      objectSrc: ["'none'"],
+      frameAncestors: ["'none'"],
+      upgradeInsecureRequests: [],
+    },
+  },
+  hsts: {
+    maxAge: 31536000,
+    includeSubDomains: true,
+    preload: true,
+  },
+  xFrameOptions: { action: 'deny' },
+  referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
+}));
 
 // ---------------------------------------------------------------------------
 // CORS – restrict to known origins, credentials required for session cookies
@@ -165,7 +192,7 @@ app.post('/api/auth/login', express.json(), loginLimiter, async (req: express.Re
     } catch (e) { /* audit logging must not break login */ }
   };
 
-  const finalizeLogin = (sessionUser: { username: string; role: string }) => {
+  const finalizeLogin = (sessionUser: { id: number; username: string; role: string }) => {
     req.session.regenerate((regenerateError) => {
       if (regenerateError) {
         respondWithServerError(res, regenerateError, 'Fehler bei Session-Regeneration nach Login:');
@@ -199,7 +226,7 @@ app.post('/api/auth/login', express.json(), loginLimiter, async (req: express.Re
       }
       if (legacyMatch) {
         logAudit('login-legacy', true);
-        finalizeLogin({ username: 'admin', role: 'admin' });
+        finalizeLogin({ id: 0, username: 'admin', role: 'admin' });
         return;
       }
       logAudit('login-legacy', false);
@@ -232,7 +259,7 @@ app.post('/api/auth/login', express.json(), loginLimiter, async (req: express.Re
   }
 
   logAudit('login', true);
-  finalizeLogin({ username: user.username, role: user.role });
+  finalizeLogin({ id: user.id, username: user.username, role: user.role });
 });
 
 app.use('/api/invoices/:id/pdf', applyLimiterForMethods(['GET'], pdfGenerationLimiter));

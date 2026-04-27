@@ -4,6 +4,8 @@ import PDFDocument from 'pdfkit';
 import QRCode from 'qrcode';
 import { requireRole } from '../utils/auth.js';
 import { respondWithServerError } from '../utils/httpErrors.js';
+import { formatCurrency } from '../utils/formatting.js';
+import { logAudit, getAuditContext, safeJson } from '../utils/auditLog.js';
 
 const router = Router();
 type SqlParam = string | number | null;
@@ -19,10 +21,6 @@ const DUNNING_LABELS: Record<number, string> = {
   3: 'Letzte Mahnung',
 };
 
-function formatCurrency(value: number): string {
-  return new Intl.NumberFormat('de-AT', { style: 'currency', currency: 'EUR' }).format(value);
-}
-
 function calculateDunningDeadline(level: number): string {
   const date = new Date();
   const days = level >= 3 ? 5 : level === 2 ? 7 : 10;
@@ -30,21 +28,18 @@ function calculateDunningDeadline(level: number): string {
   return date.toISOString().slice(0, 10);
 }
 
-// Generate next invoice number: RF-YYYYMMDD-XXX
-// Must be called within a BEGIN IMMEDIATE transaction to prevent race conditions
 function generateInvoiceNumber(): string {
   const today = new Date();
   const yyyy = today.getFullYear();
   const mm = String(today.getMonth() + 1).padStart(2, '0');
   const dd = String(today.getDate()).padStart(2, '0');
   const dateStr = `${yyyy}${mm}${dd}`;
-  
-  // Get count of invoices today
+
   const todayInvoices = db.prepare(`
-    SELECT COUNT(*) as count FROM invoices 
+    SELECT COUNT(*) as count FROM invoices
     WHERE invoice_number LIKE ?
   `).get(`RF-${dateStr}%`) as { count: number };
-  
+
   const sequence = String(todayInvoices.count + 1).padStart(3, '0');
   return `RF-${dateStr}-${sequence}`;
 }
@@ -53,7 +48,7 @@ function generateInvoiceNumber(): string {
 router.get('/', (req, res) => {
   const paid = getSingleQueryValue(req.query.paid);
   const patientId = getSingleQueryValue(req.query.patient_id);
-  
+
   let query = `
     SELECT i.*, p.first_name || ' ' || p.last_name as patient_name,
            p.email as patient_email, p.phone as patient_phone
@@ -62,19 +57,19 @@ router.get('/', (req, res) => {
     WHERE 1=1
   `;
   const params: SqlParam[] = [];
-  
+
   if (paid !== undefined) {
     query += ' AND i.paid = ?';
     params.push(paid === 'true' ? 1 : 0);
   }
-  
+
   if (patientId) {
     query += ' AND i.patient_id = ?';
     params.push(patientId);
   }
-  
+
   query += ' ORDER BY i.created_at DESC';
-  
+
   try {
     const invoices = db.prepare(query).all(...params);
     res.json({ success: true, data: invoices });
@@ -94,7 +89,7 @@ router.get('/:id', (req, res) => {
       JOIN patients p ON i.patient_id = p.id
       WHERE i.id = ?
     `).get(req.params.id);
-    
+
     if (!invoice) {
       return res.status(404).json({ success: false, error: 'Honorarnote nicht gefunden' });
     }
@@ -107,26 +102,24 @@ router.get('/:id', (req, res) => {
 // Create invoice
 router.post('/', requireRole('admin'), async (req, res) => {
   const { patient_id, appointment_id, units, rate_per_unit, description } = req.body;
-  
+
   if (!patient_id || !units || !rate_per_unit) {
-    return res.status(400).json({ 
-      success: false, 
-      error: 'Patient, Einheiten und Satz sind erforderlich' 
+    return res.status(400).json({
+      success: false,
+      error: 'Patient, Einheiten und Satz sind erforderlich'
     });
   }
-  
-  // Validate positive numbers
+
   if (units <= 0 || rate_per_unit <= 0) {
-    return res.status(400).json({ 
-      success: false, 
-      error: 'Einheiten und Satz müssen positive Zahlen sein' 
+    return res.status(400).json({
+      success: false,
+      error: 'Einheiten und Satz müssen positive Zahlen sein'
     });
   }
-  
+
   const total = units * rate_per_unit;
-  
+
   try {
-    // Wrap number generation + INSERT in a transaction to prevent race conditions
     const createInvoice = db.transaction(() => {
       const invoice_number = generateInvoiceNumber();
       const info = db.prepare(`
@@ -135,9 +128,9 @@ router.post('/', requireRole('admin'), async (req, res) => {
       `).run(invoice_number, patient_id, appointment_id || null, units, rate_per_unit, total, description || '');
       return info.lastInsertRowid;
     });
-    
+
     const lastId = createInvoice();
-    
+
     const invoice = db.prepare(`
       SELECT i.*, p.first_name || ' ' || p.last_name as patient_name,
              p.email as patient_email, p.phone as patient_phone,
@@ -146,7 +139,10 @@ router.post('/', requireRole('admin'), async (req, res) => {
       JOIN patients p ON i.patient_id = p.id
       WHERE i.id = ?
     `).get(lastId);
-    
+
+    const ctx = getAuditContext(req);
+    logAudit({ ...ctx, action: 'create', entity_type: 'invoice', entity_id: lastId, new_value: safeJson(invoice), success: true });
+
     res.status(201).json({ success: true, data: invoice });
   } catch (error) {
     respondWithServerError(res, error, 'Fehler beim Erstellen der Honorarnote:', 'Honorarnote konnte nicht angelegt werden.');
@@ -175,28 +171,24 @@ router.get('/:id/pdf', async (req, res) => {
       rate_per_unit: number;
       total: number;
     } | undefined;
-    
+
     if (!invoice) {
       return res.status(404).json({ success: false, error: 'Honorarnote nicht gefunden' });
     }
-    
-    // Create PDF
+
     const doc = new PDFDocument({ margin: 50 });
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="${invoice.invoice_number}.pdf"`);
     doc.pipe(res);
-    
-    // Header
+
     doc.fontSize(24).font('Helvetica-Bold').text('HONORARNOTE', { align: 'center' });
     doc.moveDown();
-    
-    // Invoice details
+
     doc.fontSize(12).font('Helvetica');
     doc.text(`Rechnungsnummer: ${invoice.invoice_number}`);
     doc.text(`Datum: ${new Date(invoice.created_at).toLocaleDateString('de-AT')}`);
     doc.moveDown();
-    
-    // Patient details
+
     doc.font('Helvetica-Bold').text('Patient/Patientin:');
     doc.font('Helvetica').text(`${invoice.patient_name}`);
     if (invoice.patient_birthdate) {
@@ -209,44 +201,38 @@ router.get('/:id/pdf', async (req, res) => {
       doc.text(`Telefon: ${invoice.patient_phone}`);
     }
     doc.moveDown();
-    
-    // Invoice items table
+
     doc.font('Helvetica-Bold').text('Leistungen:');
     doc.moveDown(0.5);
-    
-    // Table header
+
     const tableTop = doc.y;
     doc.font('Helvetica-Bold').fontSize(10);
     doc.text('Beschreibung', 50, tableTop);
     doc.text('Einheiten', 300, tableTop, { width: 80, align: 'right' });
     doc.text('€/Einheit', 380, tableTop, { width: 80, align: 'right' });
     doc.text('Gesamt', 460, tableTop, { width: 80, align: 'right' });
-    
+
     doc.moveTo(50, tableTop + 15).lineTo(540, tableTop + 15).stroke();
-    
-    // Table row
+
     doc.font('Helvetica').fontSize(10);
     const rowY = tableTop + 25;
     doc.text(invoice.description || 'Physiotherapeutische Leistung', 50, rowY);
     doc.text(invoice.units.toString(), 300, rowY, { width: 80, align: 'right' });
     doc.text(invoice.rate_per_unit.toFixed(2), 380, rowY, { width: 80, align: 'right' });
     doc.text(invoice.total.toFixed(2) + ' €', 460, rowY, { width: 80, align: 'right' });
-    
+
     doc.moveDown(3);
-    
-    // Total
+
     doc.moveTo(300, doc.y).lineTo(540, doc.y).stroke();
     doc.moveDown(0.5);
     doc.font('Helvetica-Bold').fontSize(12);
     doc.text('Gesamtbetrag:', 300, doc.y);
     doc.text(invoice.total.toFixed(2) + ' €', 460, doc.y, { width: 80, align: 'right' });
-    
-    // MwSt-Hinweis (befreit nach §6 Abs.1 Z 19 UStG)
+
     doc.moveDown(2);
     doc.font('Helvetica').fontSize(9);
     doc.text('Steuerbefreit gemäß §6 Abs.1 Z 19 UStG (Heilbehandlungsleistungen)', { align: 'center' });
-    
-    // QR Code for Austrian Register (RKS)
+
     doc.moveDown(2);
     const qrData = `RKS1.0|${invoice.invoice_number}|${invoice.total.toFixed(2)}|EUR|${new Date(invoice.created_at).toISOString().slice(0,10)}`;
     try {
@@ -257,13 +243,12 @@ router.get('/:id/pdf', async (req, res) => {
     } catch (qrError) {
       console.error('QR generation failed:', qrError);
     }
-    
-    // Footer
+
     doc.moveDown(4);
     doc.fontSize(8).text('PhysioFlow - Erstellt mit PhysioFlow Software', { align: 'center' });
-    
+
     doc.end();
-    
+
   } catch (error) {
     console.error('PDF generation error:', error);
     res.status(500).json({ success: false, error: 'PDF konnte nicht erstellt werden' });
@@ -306,6 +291,9 @@ router.post('/:id/dunning/escalate', requireRole('admin'), (req, res) => {
       JOIN patients p ON i.patient_id = p.id
       WHERE i.id = ?
     `).get(req.params.id);
+
+    const ctx = getAuditContext(req);
+    logAudit({ ...ctx, action: 'dunning_escalate', entity_type: 'invoice', entity_id: req.params.id, new_value: safeJson({ dunning_level: nextLevel }), success: true });
 
     res.json({ success: true, data: updated });
   } catch (error) {
@@ -401,20 +389,24 @@ router.get('/:id/dunning-letter.pdf', (req, res) => {
 // Mark invoice as paid/unpaid
 router.put('/:id/paid', requireRole('admin'), (req, res) => {
   const { paid } = req.body;
-  
+
   try {
+    const old = db.prepare('SELECT * FROM invoices WHERE id = ?').get(req.params.id);
     const result = db.prepare(`
       UPDATE invoices
       SET paid = ?, dunning_level = CASE WHEN ? = 1 THEN 0 ELSE dunning_level END,
           dunning_date = CASE WHEN ? = 1 THEN NULL ELSE dunning_date END
       WHERE id = ?
     `).run(paid ? 1 : 0, paid ? 1 : 0, paid ? 1 : 0, req.params.id);
-    
+
     if (result.changes === 0) {
       return res.status(404).json({ success: false, error: 'Honorarnote nicht gefunden' });
     }
-    
+
     const invoice = db.prepare('SELECT * FROM invoices WHERE id = ?').get(req.params.id);
+    const ctx = getAuditContext(req);
+    logAudit({ ...ctx, action: paid ? 'mark_paid' : 'mark_unpaid', entity_type: 'invoice', entity_id: req.params.id, old_value: safeJson(old), new_value: safeJson(invoice), success: true });
+
     res.json({ success: true, data: invoice });
   } catch (error) {
     respondWithServerError(res, error, 'Fehler beim Aktualisieren des Zahlungsstatus:', 'Zahlungsstatus konnte nicht aktualisiert werden.');
@@ -424,10 +416,15 @@ router.put('/:id/paid', requireRole('admin'), (req, res) => {
 // Delete invoice
 router.delete('/:id', requireRole('admin'), (req, res) => {
   try {
+    const old = db.prepare('SELECT * FROM invoices WHERE id = ?').get(req.params.id);
     const result = db.prepare('DELETE FROM invoices WHERE id = ?').run(req.params.id);
     if (result.changes === 0) {
       return res.status(404).json({ success: false, error: 'Honorarnote nicht gefunden' });
     }
+
+    const ctx = getAuditContext(req);
+    logAudit({ ...ctx, action: 'delete', entity_type: 'invoice', entity_id: req.params.id, old_value: safeJson(old), success: true });
+
     res.json({ success: true, message: 'Honorarnote erfolgreich gelöscht' });
   } catch (error) {
     respondWithServerError(res, error, 'Fehler beim Löschen der Honorarnote:', 'Honorarnote konnte nicht gelöscht werden.');

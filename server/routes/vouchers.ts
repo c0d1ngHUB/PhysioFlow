@@ -2,6 +2,8 @@ import { Router } from 'express';
 import db from '../db/index.js';
 import { respondWithServerError } from '../utils/httpErrors.js';
 import { requireAuth, requireRole } from '../utils/auth.js';
+import { voucherSchema, voucherUpdateSchema, validateBody } from '../utils/validation.js';
+import { logAudit, getAuditContext, safeJson } from '../utils/auditLog.js';
 
 const router = Router();
 
@@ -28,12 +30,8 @@ router.get('/', (_req, res) => {
   }
 });
 
-router.post('/', (req, res) => {
+router.post('/', validateBody(voucherSchema), (req, res) => {
   const { code, patient_id, description, value, expires_at } = req.body ?? {};
-
-  if (!code || !description || Number(value) <= 0) {
-    return res.status(400).json({ success: false, error: 'Code, Beschreibung und Wert sind erforderlich' });
-  }
 
   try {
     const result = db.prepare(`
@@ -48,25 +46,29 @@ router.post('/', (req, res) => {
       WHERE v.id = ?
     `).get(result.lastInsertRowid);
 
+    const ctx = getAuditContext(req);
+    logAudit({ ...ctx, action: 'create', entity_type: 'voucher', entity_id: result.lastInsertRowid, new_value: safeJson(voucher), success: true });
+
     res.status(201).json({ success: true, data: voucher });
   } catch (error) {
     respondWithServerError(res, error, 'Fehler beim Erstellen des Gutscheins:', 'Gutschein konnte nicht angelegt werden.');
   }
 });
 
-router.put('/:id', (req, res) => {
+router.put('/:id', validateBody(voucherUpdateSchema), (req, res) => {
   const { code, patient_id, description, value, expires_at, used } = req.body ?? {};
 
-  if (!code || !description || Number(value) <= 0) {
-    return res.status(400).json({ success: false, error: 'Code, Beschreibung und Wert sind erforderlich' });
-  }
-
   try {
-    const current = db.prepare('SELECT * FROM vouchers WHERE id = ?').get(req.params.id) as { used: number; used_date: string | null } | undefined;
+    const current = db.prepare('SELECT * FROM vouchers WHERE id = ?').get(req.params.id) as { used: number; used_date: string | null; code: string; description: string; value: number; expires_at: string | null; patient_id: number | null } | undefined;
     if (!current) {
       return res.status(404).json({ success: false, error: 'Gutschein nicht gefunden' });
     }
 
+    const nextCode = code !== undefined ? String(code).trim().toUpperCase() : current.code;
+    const nextPatientId = patient_id !== undefined ? patient_id : current.patient_id;
+    const nextDesc = description !== undefined ? String(description).trim() : current.description;
+    const nextValue = value !== undefined ? Number(value) : current.value;
+    const nextExpires = expires_at !== undefined ? expires_at : current.expires_at;
     const nextUsed = used ? 1 : 0;
     const usedDate = nextUsed ? (current.used_date ?? new Date().toISOString()) : null;
 
@@ -74,7 +76,7 @@ router.put('/:id', (req, res) => {
       UPDATE vouchers
       SET code = ?, patient_id = ?, description = ?, value = ?, expires_at = ?, used = ?, used_date = ?
       WHERE id = ?
-    `).run(String(code).trim().toUpperCase(), patient_id || null, String(description).trim(), Number(value), expires_at || null, nextUsed, usedDate, req.params.id);
+    `).run(nextCode, nextPatientId, nextDesc, nextValue, nextExpires, nextUsed, usedDate, req.params.id);
 
     if (result.changes === 0) {
       return res.status(404).json({ success: false, error: 'Gutschein nicht gefunden' });
@@ -87,6 +89,9 @@ router.put('/:id', (req, res) => {
       WHERE v.id = ?
     `).get(req.params.id);
 
+    const ctx = getAuditContext(req);
+    logAudit({ ...ctx, action: 'update', entity_type: 'voucher', entity_id: req.params.id, old_value: safeJson(current), new_value: safeJson(voucher), success: true });
+
     res.json({ success: true, data: voucher });
   } catch (error) {
     respondWithServerError(res, error, 'Fehler beim Aktualisieren des Gutscheins:', 'Gutschein konnte nicht aktualisiert werden.');
@@ -97,6 +102,7 @@ router.post('/:id/use', (req, res) => {
   const { used } = req.body ?? {};
 
   try {
+    const current = db.prepare('SELECT * FROM vouchers WHERE id = ?').get(req.params.id);
     const result = db.prepare(`
       UPDATE vouchers
       SET used = ?, used_date = ?
@@ -114,6 +120,9 @@ router.post('/:id/use', (req, res) => {
       WHERE v.id = ?
     `).get(req.params.id);
 
+    const ctx = getAuditContext(req);
+    logAudit({ ...ctx, action: used ? 'use' : 'unuse', entity_type: 'voucher', entity_id: req.params.id, old_value: safeJson(current), new_value: safeJson(voucher), success: true });
+
     res.json({ success: true, data: voucher });
   } catch (error) {
     respondWithServerError(res, error, 'Fehler beim Ändern des Gutscheinstatus:', 'Gutscheinstatus konnte nicht aktualisiert werden.');
@@ -122,10 +131,14 @@ router.post('/:id/use', (req, res) => {
 
 router.delete('/:id', (req, res) => {
   try {
+    const old = db.prepare('SELECT * FROM vouchers WHERE id = ?').get(req.params.id);
     const result = db.prepare('DELETE FROM vouchers WHERE id = ?').run(req.params.id);
     if (result.changes === 0) {
       return res.status(404).json({ success: false, error: 'Gutschein nicht gefunden' });
     }
+
+    const ctx = getAuditContext(req);
+    logAudit({ ...ctx, action: 'delete', entity_type: 'voucher', entity_id: req.params.id, old_value: safeJson(old), success: true });
 
     res.json({ success: true, message: 'Gutschein gelöscht' });
   } catch (error) {

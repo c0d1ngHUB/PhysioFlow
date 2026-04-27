@@ -2,31 +2,12 @@ import { Router } from 'express';
 import db from '../db/index.js';
 import { requireRole } from '../utils/auth.js';
 import { respondWithServerError } from '../utils/httpErrors.js';
+import { getWeekRange } from '../utils/date.js';
+import { appointmentSchema, appointmentUpdateSchema, validateBody } from '../utils/validation.js';
+import { logAudit, getAuditContext, safeJson } from '../utils/auditLog.js';
 
 const router = Router();
 type SqlParam = string | number | null;
-
-function toLocalDateStr(date: Date): string {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-}
-
-function getWeekRange(dateValue: string) {
-  const base = new Date(`${dateValue}T12:00:00`);
-  const day = base.getDay();
-  const mondayOffset = day === 0 ? -6 : 1 - day;
-  const monday = new Date(base);
-  monday.setDate(base.getDate() + mondayOffset);
-  const sunday = new Date(monday);
-  sunday.setDate(monday.getDate() + 6);
-
-  return {
-    monday: toLocalDateStr(monday),
-    sunday: toLocalDateStr(sunday),
-  };
-}
 
 function buildIcsDateTime(date: string, time: string): string {
   return `${date.replaceAll('-', '')}T${time.replaceAll(':', '')}00`;
@@ -66,16 +47,13 @@ router.get('/', (req, res) => {
   const params: SqlParam[] = [];
 
   if (date && !view) {
-    // Legacy: single date filter (backward compat)
     query += ' AND a.date = ?';
     params.push(date);
   } else if (date && view === 'week') {
-    // Week view: get Monday-Sunday of the week containing `date`
     const { monday, sunday } = getWeekRange(String(date));
     query += ' AND a.date >= ? AND a.date <= ?';
     params.push(monday, sunday);
   } else if (date && view === 'month') {
-    // Month view: get all days of the month containing `date`
     const [year, month] = String(date).split('-').map(Number);
     const start = `${String(year)}-${String(month).padStart(2, '0')}-01`;
     const lastDay = new Date(year, month, 0).getDate();
@@ -83,7 +61,6 @@ router.get('/', (req, res) => {
     query += ' AND a.date >= ? AND a.date <= ?';
     params.push(start, end);
   } else if (date) {
-    // Single date filter (backward compat when no view param)
     query += ' AND a.date = ?';
     params.push(date);
   }
@@ -97,9 +74,9 @@ router.get('/', (req, res) => {
     query += ' AND a.therapist_id = ?';
     params.push(therapistId);
   }
-  
+
   query += ' ORDER BY a.date, a.time_start';
-  
+
   try {
     const appointments = db.prepare(query).all(...params);
     res.json({ success: true, data: appointments });
@@ -183,7 +160,7 @@ router.get('/:id', (req, res) => {
       LEFT JOIN therapists t ON a.therapist_id = t.id
       WHERE a.id = ?
     `).get(req.params.id);
-    
+
     if (!appointment) {
       return res.status(404).json({ success: false, error: 'Termin nicht gefunden' });
     }
@@ -194,24 +171,16 @@ router.get('/:id', (req, res) => {
 });
 
 // Create appointment
-router.post('/', (req, res) => {
+router.post('/', validateBody(appointmentSchema), (req, res) => {
   const { patient_id, therapist_id, date, time_start, time_end, treatment_type, notes, sms_reminder } = req.body;
-  
-  if (!patient_id || !date || !time_start || !time_end || !treatment_type) {
-    return res.status(400).json({ 
-      success: false, 
-      error: 'Patient, Datum, Zeit und Behandlungstyp sind erforderlich' 
-    });
-  }
-  
-  // Validate time range
+
   if (time_end <= time_start) {
-    return res.status(400).json({ 
-      success: false, 
-      error: 'Endzeit muss nach Startzeit liegen' 
+    return res.status(400).json({
+      success: false,
+      error: 'Endzeit muss nach Startzeit liegen'
     });
   }
-  
+
   try {
     const overlapping = db.prepare(`
       SELECT id
@@ -233,7 +202,7 @@ router.post('/', (req, res) => {
       INSERT INTO appointments (patient_id, therapist_id, date, time_start, time_end, treatment_type, notes, sms_reminder)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `).run(patient_id, therapist_id || null, date, time_start, time_end, treatment_type, notes || null, sms_reminder || 0);
-    
+
     const appointment = db.prepare(`
       SELECT
         a.*,
@@ -246,7 +215,10 @@ router.post('/', (req, res) => {
       LEFT JOIN therapists t ON a.therapist_id = t.id
       WHERE a.id = ?
     `).get(result.lastInsertRowid);
-    
+
+    const ctx = getAuditContext(req);
+    logAudit({ ...ctx, action: 'create', entity_type: 'appointment', entity_id: result.lastInsertRowid, new_value: safeJson(appointment), success: true });
+
     res.status(201).json({ success: true, data: appointment });
   } catch (error) {
     respondWithServerError(res, error, 'Fehler beim Erstellen des Termins:', 'Termin konnte nicht angelegt werden.');
@@ -254,18 +226,17 @@ router.post('/', (req, res) => {
 });
 
 // Update appointment
-router.put('/:id', (req, res) => {
+router.put('/:id', validateBody(appointmentUpdateSchema), (req, res) => {
   const { patient_id, therapist_id, date, time_start, time_end, treatment_type, notes, sms_reminder } = req.body;
   const { id } = req.params;
-  
-  // Validate time range if both times are provided
+
   if (time_start && time_end && time_end <= time_start) {
-    return res.status(400).json({ 
-      success: false, 
-      error: 'Endzeit muss nach Startzeit liegen' 
+    return res.status(400).json({
+      success: false,
+      error: 'Endzeit muss nach Startzeit liegen'
     });
   }
-  
+
   try {
     const overlapping = db.prepare(`
       SELECT id
@@ -284,17 +255,19 @@ router.put('/:id', (req, res) => {
       });
     }
 
+    const old = db.prepare('SELECT * FROM appointments WHERE id = ?').get(id);
+
     const result = db.prepare(`
-      UPDATE appointments 
-      SET patient_id = ?, therapist_id = ?, date = ?, time_start = ?, time_end = ?, 
+      UPDATE appointments
+      SET patient_id = ?, therapist_id = ?, date = ?, time_start = ?, time_end = ?,
           treatment_type = ?, notes = ?, sms_reminder = ?
       WHERE id = ?
     `).run(patient_id, therapist_id || null, date, time_start, time_end, treatment_type, notes || null, sms_reminder ?? 0, id);
-    
+
     if (result.changes === 0) {
       return res.status(404).json({ success: false, error: 'Termin nicht gefunden' });
     }
-    
+
     const appointment = db.prepare(`
       SELECT
         a.*,
@@ -307,7 +280,10 @@ router.put('/:id', (req, res) => {
       LEFT JOIN therapists t ON a.therapist_id = t.id
       WHERE a.id = ?
     `).get(id);
-    
+
+    const ctx = getAuditContext(req);
+    logAudit({ ...ctx, action: 'update', entity_type: 'appointment', entity_id: id, old_value: safeJson(old), new_value: safeJson(appointment), success: true });
+
     res.json({ success: true, data: appointment });
   } catch (error) {
     respondWithServerError(res, error, 'Fehler beim Aktualisieren des Termins:', 'Termin konnte nicht aktualisiert werden.');
@@ -336,6 +312,7 @@ router.post('/:id/cancel', (req, res) => {
       `).get(req.params.id);
       return res.json({ success: true, data: appointment });
     }
+    const old = db.prepare('SELECT * FROM appointments WHERE id = ?').get(req.params.id);
     db.prepare('UPDATE appointments SET status = ? WHERE id = ?').run('cancelled', req.params.id);
     const appointment = db.prepare(`
       SELECT
@@ -349,6 +326,8 @@ router.post('/:id/cancel', (req, res) => {
       LEFT JOIN therapists t ON a.therapist_id = t.id
       WHERE a.id = ?
     `).get(req.params.id);
+    const ctx = getAuditContext(req);
+    logAudit({ ...ctx, action: 'cancel', entity_type: 'appointment', entity_id: req.params.id, old_value: safeJson(old), new_value: safeJson(appointment), success: true });
     res.json({ success: true, data: appointment });
   } catch (error) {
     respondWithServerError(res, error, 'Fehler beim Absagen des Termins:', 'Termin konnte nicht abgesagt werden.');
@@ -358,10 +337,13 @@ router.post('/:id/cancel', (req, res) => {
 // Delete appointment
 router.delete('/:id', requireRole('admin'), (req, res) => {
   try {
+    const old = db.prepare('SELECT * FROM appointments WHERE id = ?').get(req.params.id);
     const result = db.prepare('DELETE FROM appointments WHERE id = ?').run(req.params.id);
     if (result.changes === 0) {
       return res.status(404).json({ success: false, error: 'Termin nicht gefunden' });
     }
+    const ctx = getAuditContext(req);
+    logAudit({ ...ctx, action: 'delete', entity_type: 'appointment', entity_id: req.params.id, old_value: safeJson(old), success: true });
     res.json({ success: true, message: 'Termin erfolgreich gelöscht' });
   } catch (error) {
     respondWithServerError(res, error, 'Fehler beim Löschen des Termins:', 'Termin konnte nicht gelöscht werden.');

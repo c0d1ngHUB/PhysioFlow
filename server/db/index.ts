@@ -63,6 +63,29 @@ if (therapistCount.count === 0) {
   console.log('✅ Migration: seeded default therapist');
 }
 
+// Migrate audit_logs table if needed
+const auditColumns = db.prepare("PRAGMA table_info(audit_logs)").all() as { name: string }[];
+if (!auditColumns.some(col => col.name === 'user_id')) {
+  db.exec("ALTER TABLE audit_logs ADD COLUMN user_id INTEGER");
+  console.log('✅ Migration: added user_id column to audit_logs');
+}
+if (!auditColumns.some(col => col.name === 'entity_type')) {
+  db.exec("ALTER TABLE audit_logs ADD COLUMN entity_type TEXT");
+  console.log('✅ Migration: added entity_type column to audit_logs');
+}
+if (!auditColumns.some(col => col.name === 'entity_id')) {
+  db.exec("ALTER TABLE audit_logs ADD COLUMN entity_id TEXT");
+  console.log('✅ Migration: added entity_id column to audit_logs');
+}
+if (!auditColumns.some(col => col.name === 'old_value')) {
+  db.exec("ALTER TABLE audit_logs ADD COLUMN old_value TEXT");
+  console.log('✅ Migration: added old_value column to audit_logs');
+}
+if (!auditColumns.some(col => col.name === 'new_value')) {
+  db.exec("ALTER TABLE audit_logs ADD COLUMN new_value TEXT");
+  console.log('✅ Migration: added new_value column to audit_logs');
+}
+
 db.exec(`
   CREATE TABLE IF NOT EXISTS vouchers (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
