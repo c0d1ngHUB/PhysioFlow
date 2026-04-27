@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Expense } from '../types';
 import { Modal, showToast, ConfirmModal } from '../components/ui';
+import { apiFetch } from '../utils/api.js';
 
 import { getTodayStr } from '../utils/date';
 
@@ -34,7 +35,7 @@ export default function Expenses() {
       let url = '/api/expenses';
       if (filterCategory) url += `?category=${encodeURIComponent(filterCategory)}`;
       
-      const res = await fetch(url, { credentials: 'include' });
+      const res = await apiFetch(url, { credentials: 'include' });
       if (res.status === 401) return;
       const data = await res.json();
       if (data.success) {
@@ -76,7 +77,7 @@ export default function Expenses() {
       const url = editingExpense ? `/api/expenses/${editingExpense.id}` : '/api/expenses';
       const method = editingExpense ? 'PUT' : 'POST';
       
-      const res = await fetch(url, {
+      const res = await apiFetch(url, {
         method,
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
@@ -104,7 +105,7 @@ export default function Expenses() {
       onConfirm: async () => {
         setConfirmAction(null);
         try {
-          const res = await fetch(`/api/expenses/${id}`, { method: 'DELETE', credentials: 'include' });
+          const res = await apiFetch(`/api/expenses/${id}`, { method: 'DELETE', credentials: 'include' });
           const data = await res.json();
           if (data.success) {
             fetchExpenses();

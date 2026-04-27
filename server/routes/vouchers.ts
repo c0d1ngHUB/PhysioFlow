@@ -4,6 +4,7 @@ import { respondWithServerError } from '../utils/httpErrors.js';
 import { requireAuth, requireRole } from '../utils/auth.js';
 import { voucherSchema, voucherUpdateSchema, validateBody } from '../utils/validation.js';
 import { logAudit, getAuditContext, safeJson } from '../utils/auditLog.js';
+import { getPaginationParams, paginatedResponse } from '../utils/pagination.js';
 
 const router = Router();
 
@@ -15,16 +16,25 @@ router.post('/', requireRole('admin'));
 router.put('/:id', requireRole('admin'));
 router.delete('/:id', requireRole('admin'));
 
-router.get('/', (_req, res) => {
+router.get('/', (req, res) => {
   try {
+    const { page, limit } = getPaginationParams(req);
+    const offset = (page - 1) * limit;
+
+    const countResult = db.prepare(`
+      SELECT COUNT(*) as total FROM vouchers
+    `).get() as { total: number };
+    const total = countResult?.total || 0;
+
     const vouchers = db.prepare(`
       SELECT v.*, p.first_name || ' ' || p.last_name AS patient_name
       FROM vouchers v
       LEFT JOIN patients p ON v.patient_id = p.id
       ORDER BY v.created_at DESC, v.id DESC
-    `).all();
+      LIMIT ? OFFSET ?
+    `).all(limit, offset);
 
-    res.json({ success: true, data: vouchers });
+    res.json(paginatedResponse(vouchers, total, page, limit));
   } catch (error) {
     respondWithServerError(res, error, 'Fehler beim Laden der Gutscheine:', 'Gutscheine konnten nicht geladen werden.');
   }

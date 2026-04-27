@@ -2,6 +2,7 @@ import { createContext, useContext, useState, useEffect, useCallback, useRef } f
 import type { ReactNode } from 'react';
 import { showToast } from './components/ui';
 import { useNavigation, type Page } from './navigation';
+import { apiFetch, getCsrfToken, clearCsrfToken } from './utils/api.js';
 
 export interface AuthUser {
   username: string;
@@ -95,13 +96,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const checkAuth = useCallback(async () => {
     try {
-      const res = await originalFetch('/api/auth/check', { credentials: 'same-origin' });
+      const res = await apiFetch('/api/auth/check', { credentials: 'same-origin' });
       const data = await res.json();
       const isAuthenticated = data.authenticated === true;
       setAuthenticated(isAuthenticated);
       setUser(data.user || null);
 
       if (isAuthenticated) {
+        await getCsrfToken();
         restorePendingRoute();
       }
     } catch {
@@ -114,7 +116,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const login = useCallback(async (username: string, password: string): Promise<LoginResult> => {
     try {
-      const res = await originalFetch('/api/auth/login', {
+      const res = await apiFetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'same-origin',
@@ -126,6 +128,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         authFailureHandledRef.current = false;
         setAuthenticated(true);
         setUser(data.user || null);
+        if (data.csrfToken) {
+          // cache csrf token for subsequent requests
+          // @ts-ignore — internal helper exposed in module scope above
+          // eslint-disable-next-line no-underscore-dangle
+          (window as any).__physioflow_csrf = data.csrfToken;
+        }
+        await getCsrfToken();
         restorePendingRoute();
         return { success: true };
       }
@@ -149,11 +158,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logout = useCallback(async () => {
     try {
-      await originalFetch('/api/auth/logout', {
+      await apiFetch('/api/auth/logout', {
         method: 'POST',
         credentials: 'same-origin',
       });
     } finally {
+      clearCsrfToken();
       setAuthenticated(false);
       setUser(null);
     }

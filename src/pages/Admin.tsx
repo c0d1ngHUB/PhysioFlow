@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Patient, Therapist, Voucher } from '../types';
 import { ConfirmModal, Modal, showToast } from '../components/ui';
+import { apiFetch } from '../utils/api.js';
 import { useAuth } from '../auth';
 
 type AdminTab = 'therapists' | 'vouchers';
@@ -48,7 +49,7 @@ export default function Admin() {
 
   async function fetchPatients() {
     try {
-      const res = await fetch('/api/patients', { credentials: 'include' });
+      const res = await apiFetch('/api/patients', { credentials: 'include' });
       const data = await res.json();
       if (data.success) {
         setPatients(data.data);
@@ -66,7 +67,7 @@ export default function Admin() {
   async function fetchTherapists() {
     setTherapistsError('');
     try {
-      const res = await fetch('/api/therapists', { credentials: 'include' });
+      const res = await apiFetch('/api/therapists', { credentials: 'include' });
       const data = await res.json();
       if (data.success) {
         setTherapists(data.data);
@@ -86,7 +87,7 @@ export default function Admin() {
   async function fetchVouchers() {
     setVouchersError('');
     try {
-      const res = await fetch('/api/vouchers', { credentials: 'include' });
+      const res = await apiFetch('/api/vouchers', { credentials: 'include' });
       const data = await res.json();
       if (data.success) {
         setVouchers(data.data);
@@ -131,7 +132,7 @@ export default function Admin() {
     const method = editingTherapist ? 'PUT' : 'POST';
 
     try {
-      const res = await fetch(url, {
+      const res = await apiFetch(url, {
         method,
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
@@ -158,7 +159,7 @@ export default function Admin() {
     const method = editingVoucher ? 'PUT' : 'POST';
 
     try {
-      const res = await fetch(url, {
+      const res = await apiFetch(url, {
         method,
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
@@ -189,7 +190,7 @@ export default function Admin() {
   async function toggleVoucherUsed(voucher: Voucher) {
     setVoucherActionId(voucher.id ?? null);
     try {
-      const res = await fetch(`/api/vouchers/${voucher.id}/use`, {
+      const res = await apiFetch(`/api/vouchers/${voucher.id}/use`, {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
@@ -211,7 +212,7 @@ export default function Admin() {
 
   async function deleteTherapist(id: number) {
     try {
-      const res = await fetch(`/api/therapists/${id}`, { method: 'DELETE', credentials: 'include' });
+      const res = await apiFetch(`/api/therapists/${id}`, { method: 'DELETE', credentials: 'include' });
       const data = await res.json();
       if (!data.success) {
         showToast(data.error || 'Therapeut/in konnte nicht gelöscht werden.', 'error');
@@ -226,7 +227,7 @@ export default function Admin() {
 
   async function deleteVoucher(id: number) {
     try {
-      const res = await fetch(`/api/vouchers/${id}`, { method: 'DELETE', credentials: 'include' });
+      const res = await apiFetch(`/api/vouchers/${id}`, { method: 'DELETE', credentials: 'include' });
       const data = await res.json();
       if (!data.success) {
         showToast(data.error || 'Gutschein konnte nicht gelöscht werden.', 'error');

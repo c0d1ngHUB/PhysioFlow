@@ -18,6 +18,7 @@ import dashboardRouter from './routes/dashboard.js';
 import expensesRouter from './routes/expenses.js';
 import therapistsRouter from './routes/therapists.js';
 import vouchersRouter from './routes/vouchers.js';
+import { csrfMiddleware, getCsrfToken, regenerateCsrfToken } from './utils/csrf.js';
 import { requireRole } from './utils/auth.js';
 import { respondWithServerError } from './utils/httpErrors.js';
 
@@ -121,24 +122,12 @@ app.use(session({
 }));
 
 // ---------------------------------------------------------------------------
-// CSRF protection — verify Origin on mutating requests
+// CSRF protection — Double Submit Cookie via session
 // ---------------------------------------------------------------------------
-app.use('/api', (req: express.Request, res: express.Response, next: express.NextFunction) => {
-  if (req.method === 'GET') return next();
-  if (req.path.startsWith('/auth/login')) return next();
-  const origin = req.headers.origin;
-  if (!origin) {
-    if (process.env.NODE_ENV === 'production') {
-      res.status(403).json({ success: false, error: 'Origin-Header fehlt.' });
-      return;
-    }
-    return next();
-  }
-  if (!isAllowedOrigin(origin)) {
-    res.status(403).json({ success: false, error: 'Ungültige Herkunft.' });
-    return;
-  }
-  next();
+app.use('/api', csrfMiddleware);
+
+app.get('/api/csrf-token', (req: express.Request, res: express.Response) => {
+  getCsrfToken(req, res);
 });
 
 // ---------------------------------------------------------------------------
@@ -201,13 +190,14 @@ app.post('/api/auth/login', express.json(), loginLimiter, async (req: express.Re
 
       req.session.isAuthenticated = true;
       req.session.user = sessionUser;
+      regenerateCsrfToken(req);
       req.session.save((saveError) => {
         if (saveError) {
           respondWithServerError(res, saveError, 'Fehler beim Speichern der Session nach Login:');
           return;
         }
 
-        res.json({ success: true, user: sessionUser });
+        res.json({ success: true, user: sessionUser, csrfToken: req.session.csrfToken });
       });
     });
   };

@@ -5,6 +5,7 @@ import { respondWithServerError } from '../utils/httpErrors.js';
 import { getWeekRange } from '../utils/date.js';
 import { appointmentSchema, appointmentUpdateSchema, validateBody } from '../utils/validation.js';
 import { logAudit, getAuditContext, safeJson } from '../utils/auditLog.js';
+import { getPaginationParams, paginatedResponse } from '../utils/pagination.js';
 
 const router = Router();
 type SqlParam = string | number | null;
@@ -78,8 +79,17 @@ router.get('/', (req, res) => {
   query += ' ORDER BY a.date, a.time_start';
 
   try {
-    const appointments = db.prepare(query).all(...params);
-    res.json({ success: true, data: appointments });
+    const { page, limit } = getPaginationParams(req);
+    const offset = (page - 1) * limit;
+
+    const countQuery = query.replace(/SELECT.*?FROM/, 'SELECT COUNT(*) as total FROM').replace(/ORDER BY.*$/, '');
+    const countResult = db.prepare(countQuery).get(...params) as { total: number };
+    const total = countResult?.total || 0;
+
+    const paginatedQuery = query + ' LIMIT ? OFFSET ?';
+    const appointments = db.prepare(paginatedQuery).all(...params, limit, offset);
+
+    res.json(paginatedResponse(appointments, total, page, limit));
   } catch (error) {
     respondWithServerError(res, error, 'Fehler beim Laden der Termine:', 'Termine konnten nicht geladen werden.');
   }

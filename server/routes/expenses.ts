@@ -4,6 +4,7 @@ import { requireRole } from '../utils/auth.js';
 import { respondWithServerError } from '../utils/httpErrors.js';
 import { expenseSchema, expenseUpdateSchema, validateBody } from '../utils/validation.js';
 import { logAudit, getAuditContext, safeJson } from '../utils/auditLog.js';
+import { getPaginationParams } from '../utils/pagination.js';
 
 const router = Router();
 type SqlParam = string | number | null;
@@ -18,7 +19,8 @@ router.get('/', (req, res) => {
     const category = getSingleQueryValue(req.query.category);
     const from = getSingleQueryValue(req.query.from);
     const to = getSingleQueryValue(req.query.to);
-    const limit = getSingleQueryValue(req.query.limit) ?? '100';
+    const { page, limit } = getPaginationParams(req);
+    const offset = (page - 1) * limit;
 
     let sql = 'SELECT * FROM expenses WHERE 1=1';
     const params: SqlParam[] = [];
@@ -36,10 +38,13 @@ router.get('/', (req, res) => {
       params.push(to);
     }
 
-    sql += ' ORDER BY date DESC LIMIT ?';
-    params.push(Number(limit));
+    sql += ' ORDER BY date DESC';
 
-    const expenses = db.prepare(sql).all(...params);
+    const countSql = sql.replace('SELECT *', 'SELECT COUNT(*) as total');
+    const countResult = db.prepare(countSql).get(...params) as { total: number };
+    const total = countResult?.total || 0;
+
+    const expenses = db.prepare(sql + ' LIMIT ? OFFSET ?').all(...params, limit, offset);
 
     let totalsSql = `
       SELECT
@@ -67,6 +72,7 @@ router.get('/', (req, res) => {
     res.json({
       success: true,
       data: expenses,
+      pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
       totals: {
         all: totals.total,
         thisMonth: totals.month_total

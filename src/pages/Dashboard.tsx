@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { DashboardStats } from '../types';
 import type { Page } from '../navigation';
+import { apiFetch } from '../utils/api.js';
 
 type ExtendedStats = Omit<DashboardStats, 'today_details'> & {
   today_details: Array<{ id: number; time_start: string; time_end: string; patient_name: string; treatment_type: string; sms_reminder: number }>;
@@ -51,7 +52,7 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
     try {
       const today = new Date();
       const selectedDate = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
-      const res = await fetch(`/api/dashboard?date=${selectedDate}`, { credentials: 'include' });
+      const res = await apiFetch(`/api/dashboard?date=${selectedDate}`, { credentials: 'include' });
       const data = await res.json();
       if (data.success) {
         setStats(data.data);

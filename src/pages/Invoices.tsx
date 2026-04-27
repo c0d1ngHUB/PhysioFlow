@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Appointment, Invoice, Patient } from '../types';
 import { ConfirmModal, Modal, showToast } from '../components/ui';
+import { apiFetch } from '../utils/api.js';
 
 interface InvoicesProps {
   initialModal: string | null;
@@ -66,7 +67,7 @@ export default function Invoices({ initialModal, onModalConsumed }: InvoicesProp
       if (filterPaid === 'paid') params.set('paid', 'true');
       if (filterPaid === 'unpaid') params.set('paid', 'false');
 
-      const res = await fetch(`/api/invoices${params.toString() ? `?${params.toString()}` : ''}`, { credentials: 'include' });
+      const res = await apiFetch(`/api/invoices${params.toString() ? `?${params.toString()}` : ''}`, { credentials: 'include' });
       const data = await res.json();
       if (data.success) {
         setInvoices(data.data);
@@ -81,7 +82,7 @@ export default function Invoices({ initialModal, onModalConsumed }: InvoicesProp
 
   async function fetchPatients() {
     try {
-      const res = await fetch('/api/patients', { credentials: 'include' });
+      const res = await apiFetch('/api/patients', { credentials: 'include' });
       const data = await res.json();
       if (data.success) {
         setPatients(data.data);
@@ -96,7 +97,7 @@ export default function Invoices({ initialModal, onModalConsumed }: InvoicesProp
 
   async function fetchAppointments(patientId: string) {
     try {
-      const res = await fetch(`/api/appointments?patient_id=${patientId}`, { credentials: 'include' });
+      const res = await apiFetch(`/api/appointments?patient_id=${patientId}`, { credentials: 'include' });
       const data = await res.json();
       if (data.success) {
         setAppointments(data.data);
@@ -112,7 +113,7 @@ export default function Invoices({ initialModal, onModalConsumed }: InvoicesProp
   async function submitInvoice(event: React.FormEvent) {
     event.preventDefault();
     try {
-      const res = await fetch('/api/invoices', {
+      const res = await apiFetch('/api/invoices', {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
@@ -147,7 +148,7 @@ export default function Invoices({ initialModal, onModalConsumed }: InvoicesProp
 
   async function togglePaid(invoice: Invoice) {
     try {
-      const res = await fetch(`/api/invoices/${invoice.id}/paid`, {
+      const res = await apiFetch(`/api/invoices/${invoice.id}/paid`, {
         method: 'PUT',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
@@ -167,7 +168,7 @@ export default function Invoices({ initialModal, onModalConsumed }: InvoicesProp
 
   async function escalateDunning(invoice: Invoice) {
     try {
-      const res = await fetch(`/api/invoices/${invoice.id}/dunning/escalate`, {
+      const res = await apiFetch(`/api/invoices/${invoice.id}/dunning/escalate`, {
         method: 'POST',
         credentials: 'include',
       });
@@ -185,7 +186,7 @@ export default function Invoices({ initialModal, onModalConsumed }: InvoicesProp
 
   async function deleteInvoice(id: number) {
     try {
-      const res = await fetch(`/api/invoices/${id}`, { method: 'DELETE', credentials: 'include' });
+      const res = await apiFetch(`/api/invoices/${id}`, { method: 'DELETE', credentials: 'include' });
       const data = await res.json();
       if (!data.success) {
         showToast(data.error || 'Honorarnote konnte nicht gelöscht werden', 'error');

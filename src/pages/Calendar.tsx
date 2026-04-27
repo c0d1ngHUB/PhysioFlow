@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Appointment, Patient, Therapist } from '../types';
 import { ConfirmModal, Modal, showToast } from '../components/ui';
+import { apiFetch } from '../utils/api.js';
 import { addDays, addMonths, getTodayStr, toLocalDateStr } from '../utils/date';
 
 type ViewMode = 'day' | 'week' | 'month';
@@ -214,7 +215,7 @@ export default function Calendar({ initialModal, onModalConsumed }: CalendarProp
     setPatientsLoading(true);
     setPatientsError('');
     try {
-      const res = await fetch('/api/patients', { credentials: 'include' });
+      const res = await apiFetch('/api/patients', { credentials: 'include' });
       const data = await res.json();
       if (data.success) {
         setPatients(data.data);
@@ -235,7 +236,7 @@ export default function Calendar({ initialModal, onModalConsumed }: CalendarProp
     setTherapistsLoading(true);
     setTherapistsError('');
     try {
-      const res = await fetch('/api/therapists', { credentials: 'include' });
+      const res = await apiFetch('/api/therapists', { credentials: 'include' });
       const data = await res.json();
       if (data.success) {
         setTherapists(data.data);
@@ -264,7 +265,7 @@ export default function Calendar({ initialModal, onModalConsumed }: CalendarProp
         params.set('therapist_id', selectedTherapistId);
       }
 
-      const res = await fetch(`/api/appointments?${params.toString()}`, { credentials: 'include' });
+      const res = await apiFetch(`/api/appointments?${params.toString()}`, { credentials: 'include' });
       const data = await res.json();
       if (data.success) {
         setAppointments(data.data);
@@ -447,7 +448,7 @@ export default function Calendar({ initialModal, onModalConsumed }: CalendarProp
     };
 
     try {
-      const res = await fetch(url, {
+      const res = await apiFetch(url, {
         method,
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
@@ -469,7 +470,7 @@ export default function Calendar({ initialModal, onModalConsumed }: CalendarProp
 
   async function cancelAppointment(id: number) {
     try {
-      const res = await fetch(`/api/appointments/${id}/cancel`, { method: 'POST', credentials: 'include' });
+      const res = await apiFetch(`/api/appointments/${id}/cancel`, { method: 'POST', credentials: 'include' });
       const data = await res.json();
       if (!data.success) {
         showToast(data.error || 'Termin konnte nicht abgesagt werden', 'error');
@@ -485,7 +486,7 @@ export default function Calendar({ initialModal, onModalConsumed }: CalendarProp
 
   async function deleteAppointment(id: number) {
     try {
-      const res = await fetch(`/api/appointments/${id}`, { method: 'DELETE', credentials: 'include' });
+      const res = await apiFetch(`/api/appointments/${id}`, { method: 'DELETE', credentials: 'include' });
       const data = await res.json();
       if (!data.success) {
         showToast(data.error || 'Termin konnte nicht gelöscht werden', 'error');

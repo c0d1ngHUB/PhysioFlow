@@ -4,6 +4,7 @@ import { requireRole } from '../utils/auth.js';
 import { respondWithServerError } from '../utils/httpErrors.js';
 import { patientSchema, patientUpdateSchema, validateBody } from '../utils/validation.js';
 import { logAudit, getAuditContext, safeJson } from '../utils/auditLog.js';
+import { getPaginationParams, paginatedResponse } from '../utils/pagination.js';
 
 const router = Router();
 
@@ -16,10 +17,17 @@ try {
 } catch { /* column already exists */ }
 
 // Get all patients
-router.get('/', (_req, res) => {
+router.get('/', (req, res) => {
   try {
-    const patients = db.prepare('SELECT * FROM patients ORDER BY last_name, first_name').all();
-    res.json({ success: true, data: patients });
+    const { page, limit } = getPaginationParams(req);
+    const offset = (page - 1) * limit;
+
+    const countResult = db.prepare('SELECT COUNT(*) as total FROM patients').get() as { total: number };
+    const total = countResult.total;
+
+    const patients = db.prepare('SELECT * FROM patients ORDER BY last_name, first_name LIMIT ? OFFSET ?').all(limit, offset);
+
+    res.json(paginatedResponse(patients, total, page, limit));
   } catch (error) {
     respondWithServerError(res, error, 'Fehler beim Laden der Patient:innen:', 'Patient:innen konnten nicht geladen werden.');
   }

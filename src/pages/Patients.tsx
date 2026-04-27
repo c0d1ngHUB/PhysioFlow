@@ -1,6 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Patient } from '../types';
-import { Modal, showToast, ConfirmModal } from '../components/ui';
+import { Modal, showToast, ConfirmModal, Pagination } from '../components/ui';
+import { apiFetch } from '../utils/api.js';
 
 interface PatientsProps {
   initialModal: string | null;
@@ -20,6 +21,10 @@ export default function Patients({ initialModal, onModalConsumed }: PatientsProp
   const [historyData, setHistoryData] = useState<{ appointments: { id: number; date: string; time_start: string; time_end: string; treatment_type: string; notes: string }[]; invoices: { id: number; invoice_number: string; created_at: string; total: number; paid: boolean }[] }>({ appointments: [], invoices: [] });
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyError, setHistoryError] = useState('');
+  const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(20);
+  const [total, setTotal] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
 
   const [formData, setFormData] = useState({
     first_name: '',
@@ -30,45 +35,6 @@ export default function Patients({ initialModal, onModalConsumed }: PatientsProp
     notes: '',
     insurance_number: '',
     address: ''
-  });
-
-  // Handle initialModal from navigation store
-  useEffect(() => {
-    if (initialModal === 'patient') {
-      openModal();
-      onModalConsumed();
-    }
-  }, [initialModal, onModalConsumed]);
-
-  useEffect(() => {
-    fetchPatients();
-  }, []);
-
-  const fetchPatients = async () => {
-    setPatientsError('');
-    try {
-      const res = await fetch('/api/patients', { credentials: 'include' });
-      if (res.status === 401) return;
-      const data = await res.json();
-      if (data.success) {
-        setPatients(data.data);
-        setLoading(false);
-        return;
-      }
-      setPatients([]);
-      setPatientsError(data.error || 'Patient:innen konnten nicht geladen werden.');
-    } catch {
-      setPatients([]);
-      setPatientsError('Patient:innen konnten nicht geladen werden.');
-    }
-    setLoading(false);
-  };
-
-  const filteredPatients = patients.filter((p) => {
-    const fullName = `${p.first_name} ${p.last_name}`.toLowerCase();
-    return fullName.includes(searchTerm.toLowerCase()) ||
-      (p.email?.toLowerCase().includes(searchTerm.toLowerCase())) ||
-      (p.phone?.includes(searchTerm));
   });
 
   const openModal = (patient?: Patient) => {
@@ -91,6 +57,47 @@ export default function Patients({ initialModal, onModalConsumed }: PatientsProp
     setShowModal(true);
   };
 
+  // Handle initialModal from navigation store
+  useEffect(() => {
+    if (initialModal === 'patient') {
+      openModal();
+      onModalConsumed();
+    }
+  }, [initialModal, onModalConsumed]);
+
+  const fetchPatients = useCallback(async () => {
+    setPatientsError('');
+    try {
+      const res = await apiFetch(`/api/patients?page=${page}&limit=${limit}`, { credentials: 'include' });
+      if (res.status === 401) return;
+      const data = await res.json();
+      if (data.success) {
+        setPatients(data.data);
+        setTotal(data.pagination?.total ?? 0);
+        setTotalPages(data.pagination?.totalPages ?? 1);
+        setLoading(false);
+        return;
+      }
+      setPatients([]);
+      setPatientsError(data.error || 'Patient:innen konnten nicht geladen werden.');
+    } catch {
+      setPatients([]);
+      setPatientsError('Patient:innen konnten nicht geladen werden.');
+    }
+    setLoading(false);
+  }, [page, limit]);
+
+  useEffect(() => {
+    fetchPatients();
+  }, [fetchPatients]);
+
+  const filteredPatients = patients.filter((p) => {
+    const fullName = `${p.first_name} ${p.last_name}`.toLowerCase();
+    return fullName.includes(searchTerm.toLowerCase()) ||
+      (p.email?.toLowerCase().includes(searchTerm.toLowerCase())) ||
+      (p.phone?.includes(searchTerm));
+  });
+
   const openHistory = async (patient: Patient) => {
     setHistoryPatient(patient);
     setShowHistory(true);
@@ -98,7 +105,7 @@ export default function Patients({ initialModal, onModalConsumed }: PatientsProp
     setHistoryError('');
     setHistoryData({ appointments: [], invoices: [] });
     try {
-      const res = await fetch(`/api/patients/${patient.id}/history`, { credentials: 'include' });
+      const res = await apiFetch(`/api/patients/${patient.id}/history`, { credentials: 'include' });
       const data = await res.json();
       if (data.success) {
         setHistoryData({ appointments: data.data.appointments, invoices: data.data.invoices });
@@ -121,7 +128,7 @@ export default function Patients({ initialModal, onModalConsumed }: PatientsProp
         : '/api/patients';
       const method = editingPatient ? 'PUT' : 'POST';
       
-      const res = await fetch(url, {
+      const res = await apiFetch(url, {
         method,
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
@@ -146,7 +153,7 @@ export default function Patients({ initialModal, onModalConsumed }: PatientsProp
       onConfirm: async () => {
         setConfirmAction(null);
         try {
-          const res = await fetch(`/api/patients/${id}`, { method: 'DELETE', credentials: 'include' });
+          const res = await apiFetch(`/api/patients/${id}`, { method: 'DELETE', credentials: 'include' });
           const data = await res.json();
           if (data.success) {
             fetchPatients();
@@ -396,6 +403,14 @@ export default function Patients({ initialModal, onModalConsumed }: PatientsProp
           </div>
         )}
       </Modal>
+      <Pagination
+        page={page}
+        limit={limit}
+        total={total}
+        totalPages={totalPages}
+        onPageChange={setPage}
+        onLimitChange={(newLimit) => { setLimit(newLimit); setPage(1); }}
+      />
       <ConfirmModal
         open={!!confirmAction}
         onConfirm={confirmAction?.onConfirm ?? (() => {})}
