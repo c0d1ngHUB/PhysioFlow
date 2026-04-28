@@ -18,7 +18,7 @@ function getAllowedOrigins() {
 }
 
 function isAllowedOrigin(origin?: string) {
-  if (!origin) return process.env.NODE_ENV !== 'production';
+  if (!origin) return true; // allow same-origin & direct requests (no Origin header)
   return getAllowedOrigins().includes(origin);
 }
 
@@ -27,8 +27,12 @@ export function generateCsrfToken(): string {
 }
 
 export function csrfMiddleware(req: Request, res: Response, next: NextFunction) {
-  if (req.method === 'GET') return next();
-  if (req.path.startsWith('/auth/login')) return next();
+  if (req.method === 'GET') {
+    return next();
+  }
+  if (req.path.startsWith('/auth/login')) {
+    return next();
+  }
 
   // Origin validation
   const origin = req.headers.origin || req.headers.referer;
@@ -53,6 +57,10 @@ export function csrfMiddleware(req: Request, res: Response, next: NextFunction) 
 }
 
 export function getCsrfToken(req: Request, res: Response) {
+  if (!req.session) {
+    res.status(500).json({ success: false, error: 'Session not initialized' });
+    return;
+  }
   if (!req.session.csrfToken) {
     req.session.csrfToken = generateCsrfToken();
   }

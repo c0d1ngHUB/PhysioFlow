@@ -2,7 +2,7 @@ module.exports = {
   apps: [
     {
       name: 'physioflow-server',
-      script: 'server/index.ts',
+      script: '/home/m3kky/PhysioFlow/server/index.ts',
       interpreter: 'node',
       node_args: '--import tsx',
       cwd: '/home/m3kky/PhysioFlow',

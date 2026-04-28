@@ -21,9 +21,12 @@ const db = new Database(dbPath);
 // Enable foreign keys
 db.pragma('foreign_keys = ON');
 
-// Run Umzug migrations
-await runMigrations(db);
+// Enable WAL mode for better concurrency
+db.pragma('journal_mode = WAL');
 
-console.log('✅ Database initialized at:', dbPath);
+export async function initDatabase() {
+  await runMigrations(db);
+  console.log('✅ Database initialized at:', dbPath);
+}
 
 export default db;
