@@ -1,13 +1,30 @@
 import { useState, useEffect } from 'react';
+import { Badge } from '../components/ui/Badge';
+import { Button } from '../components/ui/Button';
+import { ConfirmDialog } from '../components/ui/ConfirmDialog';
+import { PageHeader } from '../components/ui/PageHeader';
+import { showToast } from '../components/ui';
+import { apiFetch } from '../lib/api';
 import { Invoice, Patient, Appointment } from '../types';
 
-export default function Invoices() {
+type InvoicesProps = {
+  openCreateModal?: boolean;
+  onCreateModalOpened?: () => void;
+};
+
+const formControlClassName =
+  'w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none transition focus:border-blue-300 focus:ring-2 focus:ring-blue-100';
+
+const monoFormControlClassName = `${formControlClassName} font-mono`;
+
+export default function Invoices({ openCreateModal = false, onCreateModalOpened }: InvoicesProps) {
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [patients, setPatients] = useState<Patient[]>([]);
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [filterPaid, setFilterPaid] = useState<'all' | 'paid' | 'unpaid'>('all');
+  const [invoiceToDelete, setInvoiceToDelete] = useState<Invoice | null>(null);
 
   const [formData, setFormData] = useState({
     patient_id: '',
@@ -23,6 +40,13 @@ export default function Invoices() {
   }, [filterPaid]);
 
   useEffect(() => {
+    if (openCreateModal) {
+      setShowModal(true);
+      onCreateModalOpened?.();
+    }
+  }, [openCreateModal]);
+
+  useEffect(() => {
     if (formData.patient_id) {
       fetchAppointments(formData.patient_id);
     }
@@ -34,7 +58,7 @@ export default function Invoices() {
       if (filterPaid === 'paid') url += '?paid=true';
       else if (filterPaid === 'unpaid') url += '?paid=false';
       
-      const res = await fetch(url);
+      const res = await apiFetch(url);
       const data = await res.json();
       if (data.success) {
         setInvoices(data.data);
@@ -48,7 +72,7 @@ export default function Invoices() {
 
   const fetchPatients = async () => {
     try {
-      const res = await fetch('/api/patients');
+      const res = await apiFetch('/api/patients');
       const data = await res.json();
       if (data.success) {
         setPatients(data.data);
@@ -60,7 +84,7 @@ export default function Invoices() {
 
   const fetchAppointments = async (patientId: string) => {
     try {
-      const res = await fetch(`/api/appointments?patient_id=${patientId}`);
+      const res = await apiFetch(`/api/appointments?patient_id=${patientId}`);
       const data = await res.json();
       if (data.success) {
         setAppointments(data.data);
@@ -74,7 +98,7 @@ export default function Invoices() {
     e.preventDefault();
     
     try {
-      const res = await fetch('/api/invoices', {
+      const res = await apiFetch('/api/invoices', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -86,30 +110,34 @@ export default function Invoices() {
       
       const data = await res.json();
       if (data.success) {
-        fetchInvoices();
+        await fetchInvoices();
         setShowModal(false);
         setFormData({ patient_id: '', appointment_id: '', units: '10', rate_per_unit: '50', description: 'Physiotherapeutische Behandlung' });
+        showToast('Honorarnote erstellt.', 'success');
       } else {
-        alert(data.error || 'Fehler beim Erstellen');
+        showToast(data.error || 'Fehler beim Erstellen', 'error');
       }
-    } catch (error) {
-      alert('Fehler beim Erstellen');
+    } catch {
+      showToast('Fehler beim Erstellen', 'error');
     }
   };
 
   const togglePaid = async (invoice: Invoice) => {
     try {
-      const res = await fetch(`/api/invoices/${invoice.id}/paid`, {
+      const res = await apiFetch(`/api/invoices/${invoice.id}/paid`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ paid: !invoice.paid })
       });
       const data = await res.json();
       if (data.success) {
-        fetchInvoices();
+        await fetchInvoices();
+        showToast(invoice.paid ? 'Honorarnote als offen markiert.' : 'Honorarnote als bezahlt markiert.', 'success');
+      } else {
+        showToast(data.error || 'Fehler beim Aktualisieren', 'error');
       }
-    } catch (error) {
-      alert('Fehler beim Aktualisieren');
+    } catch {
+      showToast('Fehler beim Aktualisieren', 'error');
     }
   };
 
@@ -118,13 +146,18 @@ export default function Invoices() {
   };
 
   const deleteInvoice = async (id: number) => {
-    if (!confirm('Honorarnote wirklich löschen?')) return;
     try {
-      const res = await fetch(`/api/invoices/${id}`, { method: 'DELETE' });
+      const res = await apiFetch(`/api/invoices/${id}`, { method: 'DELETE' });
       const data = await res.json();
-      if (data.success) fetchInvoices();
-    } catch (error) {
-      alert('Fehler beim Löschen');
+      if (data.success) {
+        await fetchInvoices();
+        setInvoiceToDelete(null);
+        showToast('Honorarnote gelöscht.', 'success');
+      } else {
+        showToast(data.error || 'Fehler beim Löschen', 'error');
+      }
+    } catch {
+      showToast('Fehler beim Löschen', 'error');
     }
   };
 
@@ -136,22 +169,36 @@ export default function Invoices() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-        <div>
-          <h2 className="text-2xl font-bold text-gray-900">Finanzen</h2>
-          <p className="text-gray-500">{invoices.length} Honorarnoten {filterPaid === 'unpaid' && `• €${totalUnpaid.toFixed(2)} offen`}</p>
-        </div>
-        <button onClick={() => setShowModal(true)} className="bg-blue-600 text-white px-6 py-2.5 rounded-lg font-medium hover:bg-blue-700 transition-colors shadow-sm">
-          + Neue Honorarnote
-        </button>
-      </div>
+      <PageHeader
+        title="Finanzen"
+        description={`${invoices.length} Honorarnoten${filterPaid === 'unpaid' ? ` • €${totalUnpaid.toFixed(2)} offen` : ''}`}
+        badge={<Badge variant="info">Honorarnoten</Badge>}
+        actions={
+          <Button size="lg" onClick={() => setShowModal(true)}>
+            + Neue Honorarnote
+          </Button>
+        }
+      />
 
       {/* Filter */}
       <div className="flex gap-2">
-        <button onClick={() => setFilterPaid('all')} className={`px-4 py-2 rounded-lg font-medium transition-colors ${filterPaid === 'all' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-600 hover:bg-gray-300'}`}>Alle</button>
-        <button onClick={() => setFilterPaid('unpaid')} className={`px-4 py-2 rounded-lg font-medium transition-colors ${filterPaid === 'unpaid' ? 'bg-amber-500 text-white' : 'bg-gray-200 text-gray-600 hover:bg-gray-300'}`}>Offen ({invoices.filter(i => !i.paid).length})</button>
-        <button onClick={() => setFilterPaid('paid')} className={`px-4 py-2 rounded-lg font-medium transition-colors ${filterPaid === 'paid' ? 'bg-emerald-500 text-white' : 'bg-gray-200 text-gray-600 hover:bg-gray-300'}`}>Bezahlt</button>
+        <Button size="sm" variant={filterPaid === 'all' ? 'primary' : 'outline'} onClick={() => setFilterPaid('all')}>Alle</Button>
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => setFilterPaid('unpaid')}
+          className={filterPaid === 'unpaid' ? 'border-amber-500 bg-amber-500 text-white hover:bg-amber-600 hover:text-white' : ''}
+        >
+          Offen ({invoices.filter(i => !i.paid).length})
+        </Button>
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => setFilterPaid('paid')}
+          className={filterPaid === 'paid' ? 'border-emerald-500 bg-emerald-500 text-white hover:bg-emerald-600 hover:text-white' : ''}
+        >
+          Bezahlt
+        </Button>
       </div>
 
       {/* Stats Cards */}
@@ -193,14 +240,14 @@ export default function Invoices() {
                     <td className="px-6 py-4 whitespace-nowrap text-gray-500">{invoice.created_at ? new Date(invoice.created_at).toLocaleDateString('de-AT') : '-'}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-right"><span className="font-mono font-bold text-gray-900">€ {invoice.total.toFixed(2)}</span></td>
                     <td className="px-6 py-4 whitespace-nowrap text-center">
-                      <button onClick={() => togglePaid(invoice)} className={`inline-flex px-3 py-1 rounded-full text-sm font-medium ${invoice.paid ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
+                      <button onClick={() => togglePaid(invoice)} className={`inline-flex rounded-full px-3 py-1 text-sm font-medium ${invoice.paid ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
                         {invoice.paid ? '✓ Bezahlt' : '○ Offen'}
                       </button>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-right">
                       <div className="flex justify-end gap-2">
-                        <button onClick={() => downloadPDF(invoice)} className="p-2 hover:bg-gray-100 rounded" title="PDF">📄</button>
-                        <button onClick={() => deleteInvoice(invoice.id!)} className="p-2 hover:bg-red-100 text-red-600 rounded" title="Löschen">🗑️</button>
+                        <Button size="icon" variant="ghost" onClick={() => downloadPDF(invoice)} title="PDF">📄</Button>
+                        <Button size="icon" variant="ghost" onClick={() => setInvoiceToDelete(invoice)} className="text-red-600 hover:bg-red-50 hover:text-red-700" title="Löschen">🗑️</Button>
                       </div>
                     </td>
                   </tr>
@@ -226,7 +273,7 @@ export default function Invoices() {
             <form onSubmit={handleSubmit} className="p-6 space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Patient *</label>
-                <select required value={formData.patient_id} onChange={(e) => setFormData({ ...formData, patient_id: e.target.value, appointment_id: '' })} className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                <select required value={formData.patient_id} onChange={(e) => setFormData({ ...formData, patient_id: e.target.value, appointment_id: '' })} className={formControlClassName}>
                   <option value="">Patient auswählen...</option>
                   {patients.map(p => <option key={p.id} value={p.id}>{p.first_name} {p.last_name}</option>)}
                 </select>
@@ -234,7 +281,7 @@ export default function Invoices() {
               {formData.patient_id && appointments.length > 0 && (
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Zugehöriger Termin (optional)</label>
-                  <select value={formData.appointment_id} onChange={(e) => setFormData({ ...formData, appointment_id: e.target.value })} className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                  <select value={formData.appointment_id} onChange={(e) => setFormData({ ...formData, appointment_id: e.target.value })} className={formControlClassName}>
                     <option value="">Kein Termin</option>
                     {appointments.map(apt => <option key={apt.id} value={apt.id}>{apt.date} {apt.time_start} - {apt.treatment_type}</option>)}
                   </select>
@@ -243,11 +290,11 @@ export default function Invoices() {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Einheiten *</label>
-                  <input type="number" required step="0.5" min="0.5" value={formData.units} onChange={(e) => setFormData({ ...formData, units: e.target.value })} className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 font-mono" />
+                  <input type="number" required step="0.5" min="0.5" value={formData.units} onChange={(e) => setFormData({ ...formData, units: e.target.value })} className={monoFormControlClassName} />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">€/Einheit *</label>
-                  <input type="number" required step="0.01" min="0" value={formData.rate_per_unit} onChange={(e) => setFormData({ ...formData, rate_per_unit: e.target.value })} className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 font-mono" />
+                  <input type="number" required step="0.01" min="0" value={formData.rate_per_unit} onChange={(e) => setFormData({ ...formData, rate_per_unit: e.target.value })} className={monoFormControlClassName} />
                 </div>
               </div>
               <div className="bg-blue-50 rounded-lg p-4 border border-blue-200">
@@ -259,16 +306,30 @@ export default function Invoices() {
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Leistungsbeschreibung</label>
-                <textarea value={formData.description} onChange={(e) => setFormData({ ...formData, description: e.target.value })} rows={2} className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" placeholder="z.B. Physiotherapeutische Behandlung" />
+                <textarea value={formData.description} onChange={(e) => setFormData({ ...formData, description: e.target.value })} rows={2} className={formControlClassName} placeholder="z.B. Physiotherapeutische Behandlung" />
               </div>
               <div className="flex gap-3 pt-4 border-t border-gray-200">
-                <button type="button" onClick={() => setShowModal(false)} className="flex-1 px-4 py-2.5 border border-gray-300 rounded-lg font-medium hover:bg-gray-50">Abbrechen</button>
-                <button type="submit" className="flex-1 px-4 py-2.5 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700">Erstellen</button>
+                <Button type="button" onClick={() => setShowModal(false)} className="flex-1" variant="outline">Abbrechen</Button>
+                <Button type="submit" className="flex-1">Erstellen</Button>
               </div>
             </form>
           </div>
         </div>
       )}
+
+      <ConfirmDialog
+        isOpen={invoiceToDelete !== null}
+        title="Honorarnote löschen?"
+        description="Die Honorarnote wird dauerhaft entfernt. Bereits verknüpfte Termine bleiben bestehen."
+        confirmLabel="Löschen"
+        confirmVariant="outline"
+        onCancel={() => setInvoiceToDelete(null)}
+        onConfirm={() => {
+          if (invoiceToDelete?.id) {
+            void deleteInvoice(invoiceToDelete.id);
+          }
+        }}
+      />
     </div>
   );
 }

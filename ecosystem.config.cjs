@@ -3,7 +3,7 @@ module.exports = {
     name: 'physioflow',
     script: './node_modules/.bin/tsx',
     args: 'server/index.ts',
-    cwd: '/home/m3kky/PhysioFlow',
+    cwd: '/home/m3kky/Projects/Physio-Flow',
     interpreter: 'none',
     exec_mode: 'fork',
     instances: 1,
@@ -12,7 +12,8 @@ module.exports = {
     max_memory_restart: '1G',
     env: {
       NODE_ENV: 'production',
-      PORT: 3001
+      PORT: 3001,
+      HOST: '127.0.0.1'
     },
     log_file: '/home/m3kky/.pm2/logs/physioflow-out.log',
     out_file: '/home/m3kky/.pm2/logs/physioflow-out.log',

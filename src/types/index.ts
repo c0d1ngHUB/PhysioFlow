@@ -9,6 +9,8 @@ export interface Patient {
   notes?: string;
   insurance_number?: string;
   address?: string;
+  is_archived?: boolean;
+  archived_at?: string | null;
   created_at?: string;
 }
 
@@ -21,6 +23,10 @@ export interface Appointment {
   time_end: string;
   treatment_type: string;
   notes?: string;
+  treatment_notes?: string;
+  treatment_services?: string | string[];
+  next_appointment_date?: string;
+  treatment_completed_at?: string;
   sms_reminder: 0 | 1 | 2; // 0=kein SMS, 1=gesendet, 2=geplant
   created_at?: string;
   // Joined fields (always present from API)

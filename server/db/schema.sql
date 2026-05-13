@@ -9,6 +9,10 @@ CREATE TABLE IF NOT EXISTS patients (
     email TEXT,
     birthdate TEXT,
     notes TEXT,
+    insurance_number TEXT,
+    address TEXT,
+    is_archived INTEGER NOT NULL DEFAULT 0,
+    archived_at TEXT,
     created_at TEXT DEFAULT (datetime('now'))
 );
 
@@ -21,6 +25,10 @@ CREATE TABLE IF NOT EXISTS appointments (
     time_end TEXT NOT NULL,
     treatment_type TEXT NOT NULL,
     notes TEXT,
+    treatment_notes TEXT,
+    treatment_services TEXT,
+    next_appointment_date TEXT,
+    treatment_completed_at TEXT,
     sms_reminder INTEGER DEFAULT 0,
     created_at TEXT DEFAULT (datetime('now')),
     FOREIGN KEY (patient_id) REFERENCES patients(id) ON DELETE CASCADE

@@ -30,7 +30,7 @@ router.get('/', (_req, res) => {
     
     // Total patients
     const totalPatients = db.prepare(`
-      SELECT COUNT(*) as count FROM patients
+      SELECT COUNT(*) as count FROM patients WHERE is_archived = 0
     `).get() as { count: number };
     
     // Today's appointment details
@@ -61,10 +61,13 @@ router.get('/', (_req, res) => {
     `).all(weekStartStr, weekFromNowStr);
 
     // Monthly revenue — this month (paid invoices)
+    const nextMonth = new Date(`${thisMonthStart}T00:00:00`);
+    nextMonth.setMonth(nextMonth.getMonth() + 1);
+    const nextMonthStart = nextMonth.toISOString().slice(0, 7) + '-01';
     const thisMonthRevenue = db.prepare(`
       SELECT COALESCE(SUM(total), 0) as total FROM invoices
-      WHERE paid = 1 AND created_at >= ?
-    `).get(thisMonthStart) as { total: number };
+      WHERE paid = 1 AND created_at >= ? AND created_at < ?
+    `).get(thisMonthStart, `${nextMonthStart}T00:00:00`) as { total: number };
 
     // Monthly revenue — last month
     const lastMonthDate = new Date(today);

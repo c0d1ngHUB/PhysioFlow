@@ -1,4 +1,10 @@
 import { useState, useEffect } from 'react';
+import { Badge } from '../components/ui/Badge';
+import { Button } from '../components/ui/Button';
+import { ConfirmDialog } from '../components/ui/ConfirmDialog';
+import { PageHeader } from '../components/ui/PageHeader';
+import { showToast } from '../components/ui';
+import { apiFetch } from '../lib/api';
 import { Expense } from '../types';
 
 const EXPENSE_CATEGORIES = [
@@ -16,11 +22,17 @@ const EXPENSE_CATEGORIES = [
   'Sonstiges'
 ];
 
+const formControlClassName =
+  'w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none transition focus:border-blue-300 focus:ring-2 focus:ring-blue-100';
+
+const monoFormControlClassName = `${formControlClassName} font-mono`;
+
 export default function Expenses() {
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [totals, setTotals] = useState({ all: 0, thisMonth: 0 });
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
+  const [expenseToDelete, setExpenseToDelete] = useState<Expense | null>(null);
   const [filterCategory, setFilterCategory] = useState<string>('');
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
 
@@ -40,7 +52,7 @@ export default function Expenses() {
       let url = '/api/expenses';
       if (filterCategory) url += `?category=${encodeURIComponent(filterCategory)}`;
       
-      const res = await fetch(url);
+      const res = await apiFetch(url);
       const data = await res.json();
       if (data.success) {
         setExpenses(data.data);
@@ -81,7 +93,7 @@ export default function Expenses() {
       const url = editingExpense ? `/api/expenses/${editingExpense.id}` : '/api/expenses';
       const method = editingExpense ? 'PUT' : 'POST';
       
-      const res = await fetch(url, {
+      const res = await apiFetch(url, {
         method,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -92,25 +104,30 @@ export default function Expenses() {
       
       const data = await res.json();
       if (data.success) {
-        fetchExpenses();
+        await fetchExpenses();
         setShowModal(false);
+        showToast(editingExpense ? 'Ausgabe aktualisiert.' : 'Ausgabe gespeichert.', 'success');
       } else {
-        alert(data.error || 'Fehler beim Speichern');
+        showToast(data.error || 'Fehler beim Speichern', 'error');
       }
-    } catch (error) {
-      alert('Fehler beim Speichern');
+    } catch {
+      showToast('Fehler beim Speichern', 'error');
     }
   };
 
   const deleteExpense = async (id: number) => {
-    if (!confirm('Ausgabe wirklich löschen?')) return;
-    
     try {
-      const res = await fetch(`/api/expenses/${id}`, { method: 'DELETE' });
+      const res = await apiFetch(`/api/expenses/${id}`, { method: 'DELETE' });
       const data = await res.json();
-      if (data.success) fetchExpenses();
-    } catch (error) {
-      alert('Fehler beim Löschen');
+      if (data.success) {
+        await fetchExpenses();
+        setExpenseToDelete(null);
+        showToast('Ausgabe gelöscht.', 'success');
+      } else {
+        showToast(data.error || 'Fehler beim Löschen', 'error');
+      }
+    } catch {
+      showToast('Fehler beim Löschen', 'error');
     }
   };
 
@@ -124,16 +141,16 @@ export default function Expenses() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-        <div>
-          <h2 className="text-2xl font-bold text-gray-900">Ausgaben</h2>
-          <p className="text-gray-500">{expenses.length} Einträge</p>
-        </div>
-        <button onClick={() => openModal()} className="bg-blue-600 text-white px-6 py-2.5 rounded-lg font-medium hover:bg-blue-700 transition-colors shadow-sm">
-          + Neue Ausgabe
-        </button>
-      </div>
+      <PageHeader
+        title="Ausgaben"
+        description={`${expenses.length} Einträge`}
+        badge={<Badge variant="warning">Kosten</Badge>}
+        actions={
+          <Button size="lg" onClick={() => openModal()}>
+            + Neue Ausgabe
+          </Button>
+        }
+      />
 
       {/* Stats Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -153,13 +170,13 @@ export default function Expenses() {
 
       {/* Filter */}
       <div className="flex flex-wrap gap-2">
-        <button onClick={() => setFilterCategory('')} className={`px-4 py-2 rounded-lg font-medium transition-colors ${!filterCategory ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-600 hover:bg-gray-300'}`}>
+        <Button size="sm" variant={!filterCategory ? 'primary' : 'outline'} onClick={() => setFilterCategory('')}>
           Alle
-        </button>
+        </Button>
         {EXPENSE_CATEGORIES.slice(0, 6).map(cat => (
-          <button key={cat} onClick={() => setFilterCategory(cat === filterCategory ? '' : cat)} className={`px-4 py-2 rounded-lg font-medium transition-colors ${filterCategory === cat ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-600 hover:bg-gray-300'}`}>
+          <Button key={cat} size="sm" variant={filterCategory === cat ? 'primary' : 'outline'} onClick={() => setFilterCategory(cat === filterCategory ? '' : cat)}>
             {cat}
-          </button>
+          </Button>
         ))}
       </div>
 
@@ -182,14 +199,14 @@ export default function Expenses() {
                   <tr key={expense.id} className="hover:bg-gray-50">
                     <td className="px-6 py-4 whitespace-nowrap text-gray-900">{new Date(expense.date).toLocaleDateString('de-AT')}</td>
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <span className="inline-flex px-3 py-1 rounded-full text-sm font-medium bg-gray-100 text-gray-700">{expense.category}</span>
+                      <Badge variant="default" className="text-sm">{expense.category}</Badge>
                     </td>
                     <td className="px-6 py-4 text-gray-600">{expense.description || '—'}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-right font-mono font-bold text-red-600">{formatCurrency(expense.amount)}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-right">
                       <div className="flex justify-end gap-2">
-                        <button onClick={() => openModal(expense)} className="p-2 hover:bg-blue-100 rounded-lg transition-colors" title="Bearbeiten">✏️</button>
-                        <button onClick={() => deleteExpense(expense.id!)} className="p-2 hover:bg-red-100 text-red-600 rounded-lg transition-colors" title="Löschen">🗑️</button>
+                        <Button size="icon" variant="ghost" onClick={() => openModal(expense)} title="Bearbeiten">✏️</Button>
+                        <Button size="icon" variant="ghost" onClick={() => setExpenseToDelete(expense)} className="text-red-600 hover:bg-red-50 hover:text-red-700" title="Löschen">🗑️</Button>
                       </div>
                     </td>
                   </tr>
@@ -222,33 +239,47 @@ export default function Expenses() {
             <form onSubmit={handleSubmit} className="p-6 space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Kategorie *</label>
-                <select required value={formData.category} onChange={(e) => setFormData({ ...formData, category: e.target.value })} className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                <select required value={formData.category} onChange={(e) => setFormData({ ...formData, category: e.target.value })} className={formControlClassName}>
                   <option value="">Kategorie wählen...</option>
                   {EXPENSE_CATEGORIES.map(cat => <option key={cat} value={cat}>{cat}</option>)}
                 </select>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Beschreibung</label>
-                <input type="text" value={formData.description} onChange={(e) => setFormData({ ...formData, description: e.target.value })} className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" placeholder="z.B. Büromaterial von Amazon" />
+                <input type="text" value={formData.description} onChange={(e) => setFormData({ ...formData, description: e.target.value })} className={formControlClassName} placeholder="z.B. Büromaterial von Amazon" />
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Betrag (€) *</label>
-                  <input type="number" required step="0.01" min="0" value={formData.amount} onChange={(e) => setFormData({ ...formData, amount: e.target.value })} className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 font-mono" placeholder="49.99" />
+                  <input type="number" required step="0.01" min="0" value={formData.amount} onChange={(e) => setFormData({ ...formData, amount: e.target.value })} className={monoFormControlClassName} placeholder="49.99" />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Datum *</label>
-                  <input type="date" required value={formData.date} onChange={(e) => setFormData({ ...formData, date: e.target.value })} className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" />
+                  <input type="date" required value={formData.date} onChange={(e) => setFormData({ ...formData, date: e.target.value })} className={formControlClassName} />
                 </div>
               </div>
               <div className="flex gap-3 pt-4 border-t border-gray-200">
-                <button type="button" onClick={() => setShowModal(false)} className="flex-1 px-4 py-2.5 border border-gray-300 rounded-lg font-medium hover:bg-gray-50">Abbrechen</button>
-                <button type="submit" className="flex-1 px-4 py-2.5 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700">Speichern</button>
+                <Button type="button" onClick={() => setShowModal(false)} className="flex-1" variant="outline">Abbrechen</Button>
+                <Button type="submit" className="flex-1">Speichern</Button>
               </div>
             </form>
           </div>
         </div>
       )}
+
+      <ConfirmDialog
+        isOpen={expenseToDelete !== null}
+        title="Ausgabe löschen?"
+        description="Diese Ausgabe wird dauerhaft entfernt."
+        confirmLabel="Löschen"
+        confirmVariant="outline"
+        onCancel={() => setExpenseToDelete(null)}
+        onConfirm={() => {
+          if (expenseToDelete?.id) {
+            void deleteExpense(expenseToDelete.id);
+          }
+        }}
+      />
     </div>
   );
 }

@@ -1,51 +1,58 @@
 # PhysioFlow 🩺
 
-> **Status:** MVP Fertig ✅  
+> **Status:** MVP+ in Betrieb ✅  
 > **Erstellt:** 2026-03-23  
-> **Letzte Änderung:** 2026-03-23
+> **Letzte Änderung:** 2026-04-09
 
 Terminmanagement für Physiotherapeuten mit SMS-Reminder und österreichkonformen Honorarnoten.
 
 ## Features
 
-- ✅ **Terminkalender** - Tages-/Wochen-/Monatsansicht mit Drag & Drop
-- ✅ **Patientenverwaltung** - Stammdaten mit Suchfunktion
-- ✅ **SMS-Reminder** - Personalisierte Erinnerungen 24h vor Termin
-- ✅ **Honorarnoten-Rechner** - Österreichkonform mit QR-Code für Registrierkasse
-- ✅ **Dashboard** - Übersicht über Termine und offene Rechnungen
-- ✅ **PDF-Export** - Honorarnoten als druckfähiges PDF
+- ✅ **Terminkalender** - Tages-/Wochen-/Monatsansicht mit Terminverwaltung
+- ✅ **Patientenverwaltung** - Stammdaten, Historie, Archivierung und Versicherungsnummer
+- ✅ **Behandlungsdokumentation** - Notizen, Leistungen und Folgetermin direkt am Termin
+- ✅ **Honorarnoten-Rechner** - Österreichkonform mit PDF-Export
+- ✅ **Dashboard** - Übersicht über Termine, Umsatz und offene Rechnungen
+- ✅ **Ausgabenverwaltung** - Kategorien, Summen und Filter
+- ✅ **Optionale Login-Absicherung** - per Admin-Login aktivierbar
+- ✅ **Toast- & Dialog-UX** - Browser-`alert()`/`confirm()` in den Kernseiten ersetzt
 
 | Feature | Status |
 |---------|--------|
 | Terminkalender (Tag/Woche/Monat) | ✅ |
-| Patientenverwaltung (CRUD) | ✅ |
+| Patientenverwaltung (CRUD + Historie + Archiv) | ✅ |
+| Behandlungsdokumentation | ✅ |
 | SMS-Reminder-System | ✅ (simuliert) |
-| Honorarnoten mit QR-Code | ✅ |
-| PDF-Export | ✅ |
+| Honorarnoten / PDF-Export | ✅ |
 | Dashboard mit Statistiken | ✅ |
+| Ausgabenverwaltung | ✅ |
+| Optionale Login-Absicherung | ✅ |
 | Österreichische Steuerbefreiung (§6 UStG) | ✅ |
 
 ## Tech Stack
 
-- **Frontend**: React 18 + TypeScript + Vite + TailwindCSS
+- **Frontend**: React 19 + TypeScript + Vite + TailwindCSS
 - **Backend**: Node.js + Express + TypeScript
 - **Datenbank**: SQLite (better-sqlite3)
 - **PDF-Generation**: PDFKit + QRCode
 
 ## Live Deployment
 
-| Resource | URL |
-|----------|-----|
-| **Live URL** | https://physio-flow.online (LAN + WAN) |
-| **Refresh/Rebuild** | `/home/m3kky/refresh_physioflow.sh` |
-| **Dev Server** | http://localhost:5173 (tests before build) |
+| Resource | URL / Pfad |
+|----------|------------|
+| **Live URL** | https://physio-flow.online |
+| **API Health** | https://physio-flow.online/api/health |
+| **Projekt lokal** | `/home/m3kky/Projects/Physio-Flow` |
+| **Deploy-Script** | `scripts/deploy-beelink.sh` |
+| **PM2 Config** | `ecosystem.config.cjs` |
+| **Dev Server** | http://localhost:5173 |
 
 ## Quick Start
 
 ### 1. Installation
 
 ```bash
-cd /home/m3kky/PhysioFlow
+cd /home/m3kky/Projects/Physio-Flow
 npm install
 ```
 
@@ -72,6 +79,51 @@ npx tsx server/index.ts  # Nur Backend
 ### 4. Öffnen
 
 Browser: http://localhost:5173
+
+## Datenschutz / DSGVO-Basis
+
+PhysioFlow enthält eine erste technische DSGVO-Basis:
+
+- **Datenschutzerklärung** als eigene Seite
+- **Impressum** als eigene Seite
+- Verlinkung aus Login-Ansicht und App-Footer
+- Session-Cookie wird als technisch notwendiger Cookie eingeordnet und in der Datenschutzerklärung erläutert
+- **Patientenarchivierung** statt nur sofortigem Löschen
+- **Patientenexport (JSON)** mit Stammdaten, Terminen, Honorarnoten und Behandlungsdokumentation
+
+**Wichtig:**
+- Die eingebauten Texte sind bewusst als **technische Vorlage** gedacht
+- Verantwortlicher, Kontaktdaten, Drittanbieter und rechtliche Details müssen vor Live-Betrieb vervollständigt werden
+- Die technische Umsetzung ersetzt **keine juristische Prüfung**
+
+Empfohlene nächste Datenschutz-Schritte:
+- einfaches Audit-Log
+- dokumentierte Auftragsverarbeiter / Drittanbieter
+
+## Auth / Login
+
+PhysioFlow kann offen betrieben oder per Login geschützt werden.
+
+### Offener Modus
+
+Wenn **kein** `PHYSIOFLOW_ADMIN_PASSWORD` gesetzt ist, läuft die App ohne Login.
+
+### Geschützter Modus
+
+Wenn `PHYSIOFLOW_ADMIN_PASSWORD` gesetzt ist, werden die API-Routen geschützt und das Frontend zeigt automatisch einen Login-Screen.
+
+Benötigte Variablen in `.env`:
+
+```env
+PHYSIOFLOW_ADMIN_USER=admin
+PHYSIOFLOW_ADMIN_PASSWORD=dein-sicheres-passwort
+SESSION_SECRET=ein-langes-zufälliges-geheimnis
+```
+
+**Wichtig:**
+- In Produktion kein Default-Passwort verwenden
+- `SESSION_SECRET` immer individuell und lang setzen
+- Das Deploy-Script blockiert absichtlich, wenn noch Platzhalter-Secrets gesetzt sind
 
 ## SMS konfigurieren (optional)
 
@@ -110,23 +162,59 @@ PhysioFlow/
 └── SPEC.md               # Vollständige Spezifikation
 ```
 
-## Deployment auf neuen Server
+## Deployment auf Beelink / neuen Server
 
-1. Projekt-Dateien kopieren
-2. `npm install` ausführen
-3. `.env` mit neuen API-Keys anpassen
-4. `npm start` starten
+### Standard-Deploy
 
-Keine weitere Konfiguration nötig – SQLite ist portabel! 🐳
+```bash
+cd /home/m3kky/Projects/Physio-Flow
+./scripts/deploy-beelink.sh
+```
+
+Das Script macht dabei:
+1. lokalen Preflight-Check
+2. lokalen Build-Test
+3. Remote-App- und DB-Backup
+4. `rsync` auf den Zielhost
+5. `npm ci`
+6. `npm rebuild better-sqlite3`
+7. `npm run build`
+8. PM2-Restart + HTTP-Smoke-Test
+
+### Voraussetzungen
+
+- SSH-Key für den Zielhost vorhanden
+- `.env` lokal korrekt gepflegt
+- keine Platzhalter-Secrets in `.env`
+- `package-lock.json` aktuell
+
+### Wichtige Deploy-Learnings
+
+- `node_modules` niemals zwischen unterschiedlichen Maschinen kopieren
+- native Module wie `better-sqlite3` immer **auf dem Zielsystem** rebuilden
+- der Backend-Port ist in Produktion lokal gebunden; externer Zugriff läuft über Reverse Proxy / OPNsense
+
+### Rollback
+
+Das Deploy-Script legt pro Lauf Backup-Pfade an und zeigt sie bei Fehlern direkt an.
+
+## Verifiziert am 2026-04-09
+
+- `npm run build` läuft lokal erfolgreich durch
+- Die verbleibenden `alert()`-/`confirm()`-Flows in `Calendar`, `Patients`, `Invoices` und `Expenses` wurden auf Toasts bzw. UI-Dialoge umgestellt
+- Ein echter Browser-Smoke-Test konnte in dieser Sandbox nicht durchgeführt werden
+- Ein lokaler Server-Smoke-Test über `npm run server` war in dieser Sandbox blockiert (`tsx` scheitert hier an einem IPC-Pipe-`EPERM`)
 
 ## Nächste Schritte (Phase 2)
 
-- [ ] Ausgabenverwaltung
 - [ ] Mahnwesen
 - [ ] Gutscheine
 - [ ] Kalender-Sync (iCal)
 - [ ] Gruppenkalender (Multi-Therapeuten)
 - [ ] Online-Terminbuchung
+- [ ] Auth-UX weiter verfeinern
+- [ ] Echten Browser-Smoke-Test außerhalb der Sandbox durchführen
+- [ ] Produktiven Runtime-Smoke-Test außerhalb der Sandbox durchführen
 
 ## Dokumentation
 

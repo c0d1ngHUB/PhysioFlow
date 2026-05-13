@@ -155,6 +155,43 @@ router.put('/:id', (req, res) => {
   }
 });
 
+// Save treatment data for an appointment
+router.put('/:id/treatment', (req, res) => {
+  const { id } = req.params;
+  const { treatment_notes, treatment_services, next_appointment_date } = req.body;
+
+  try {
+    const result = db.prepare(`
+      UPDATE appointments
+      SET treatment_notes = ?,
+          treatment_services = ?,
+          next_appointment_date = ?,
+          treatment_completed_at = datetime('now')
+      WHERE id = ?
+    `).run(
+      treatment_notes || null,
+      JSON.stringify(Array.isArray(treatment_services) ? treatment_services : []),
+      next_appointment_date || null,
+      id
+    );
+
+    if (result.changes === 0) {
+      return res.status(404).json({ success: false, error: 'Termin nicht gefunden' });
+    }
+
+    const appointment = db.prepare(`
+      SELECT a.*, p.first_name || ' ' || p.last_name as patient_name, p.phone as patient_phone
+      FROM appointments a
+      JOIN patients p ON a.patient_id = p.id
+      WHERE a.id = ?
+    `).get(id);
+
+    res.json({ success: true, data: appointment });
+  } catch (error) {
+    res.status(500).json({ success: false, error: (error as Error).message });
+  }
+});
+
 // Delete appointment
 router.delete('/:id', (req, res) => {
   try {
@@ -163,6 +200,19 @@ router.delete('/:id', (req, res) => {
       return res.status(404).json({ success: false, error: 'Termin nicht gefunden' });
     }
     res.json({ success: true, message: 'Termin erfolgreich gelöscht' });
+  } catch (error) {
+    res.status(500).json({ success: false, error: (error as Error).message });
+  }
+});
+
+// Cancel appointment (frontend compatibility)
+router.post('/:id/cancel', (req, res) => {
+  try {
+    const result = db.prepare('DELETE FROM appointments WHERE id = ?').run(req.params.id);
+    if (result.changes === 0) {
+      return res.status(404).json({ success: false, error: 'Termin nicht gefunden' });
+    }
+    res.json({ success: true, message: 'Termin erfolgreich abgesagt' });
   } catch (error) {
     res.status(500).json({ success: false, error: (error as Error).message });
   }

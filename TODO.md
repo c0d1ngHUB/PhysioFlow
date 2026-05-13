@@ -1,20 +1,19 @@
 # PhysioFlow TODO
 
-**Stand: 29.03.2026**
+**Stand: 09.04.2026**
 
 ---
 
 ## 🔴 Höchste Priorität
 
-- [ ] App im Browser testen *(letzte Notiz: "noch nicht getestet")*
-- [ ] Week/Month Calendar Views
-- [ ] Design verfeinern
+- [ ] Echten Browser-Smoke-Test auf Desktop und Mobile durchführen
+- [ ] Runtime-Smoke-Test außerhalb der Sandbox durchführen (`npm run server`, Login, Kernflows)
+- [ ] Design weiter verfeinern
 
 ---
 
 ## 🟡 Phase 2 – Neue Features
 
-- [ ] Ausgabenverwaltung (expense tracking)
 - [ ] Mahnwesen (dunning)
 - [ ] Gutscheine (vouchers)
 - [ ] Kalender-Sync (iCal)
@@ -26,14 +25,19 @@
 ## 🟢 Integration & Sonstiges
 
 - [ ] Echte SMS-Integration mit SMS77.de
+- [ ] Auth-UX weiter verfeinern
 
 ---
 
 ## ⚙️ Technical Debt
 
 - [x] Ungenutztes `generate-pdf.mjs` Script prüfen → GELÖSCHT 30.03.2026
-- [ ] Regelmäßige Build-Updates *(letzter Build: 2026-03-27)*
+- [x] Week/Month Calendar Views
+- [x] Ausgabenverwaltung (expense tracking)
+- [x] `alert()` / `confirm()` in Kernseiten durch UI-Toast/Dialog ersetzt
+- [x] Build erfolgreich geprüft am 2026-04-09
+- [ ] Weitere fokussierte UI-Konsolidierung zwischen alter `src/components/ui.tsx` und neuer `src/components/ui/*`-Struktur
 
 ---
 
-*Letztes Update: 29.03.2026*
+*Letztes Update: 09.04.2026*

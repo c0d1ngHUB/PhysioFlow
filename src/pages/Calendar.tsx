@@ -1,9 +1,25 @@
 import { useState, useEffect } from 'react';
+import { Badge } from '../components/ui/Badge';
+import { Button } from '../components/ui/Button';
+import { ConfirmDialog } from '../components/ui/ConfirmDialog';
+import { PageHeader } from '../components/ui/PageHeader';
+import { showToast } from '../components/ui';
+import { apiFetch } from '../lib/api';
 import { Appointment, Patient } from '../types';
 
 type ViewMode = 'day' | 'week' | 'month';
 
-export default function Calendar() {
+type CalendarProps = {
+  openCreateModal?: boolean;
+  onCreateModalOpened?: () => void;
+};
+
+const formControlClassName =
+  'w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none transition focus:border-blue-300 focus:ring-2 focus:ring-blue-100';
+
+const monoFormControlClassName = `${formControlClassName} font-mono`;
+
+export default function Calendar({ openCreateModal = false, onCreateModalOpened }: CalendarProps) {
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [patients, setPatients] = useState<Patient[]>([]);
   const [loading, setLoading] = useState(true);
@@ -11,7 +27,12 @@ export default function Calendar() {
   const [showModal, setShowModal] = useState(false);
   const [showTreatmentModal, setShowTreatmentModal] = useState(false);
   const [editingAppointment, setEditingAppointment] = useState<Appointment | null>(null);
+  const [appointmentToCancel, setAppointmentToCancel] = useState<Appointment | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>('day');
+  const [treatmentNotes, setTreatmentNotes] = useState('');
+  const [selectedServices, setSelectedServices] = useState<string[]>([]);
+  const [nextAppointmentDate, setNextAppointmentDate] = useState('');
+  const [treatmentDraftSaved, setTreatmentDraftSaved] = useState(false);
 
   const [formData, setFormData] = useState({
     patient_id: '',
@@ -28,9 +49,16 @@ export default function Calendar() {
     fetchPatients();
   }, [selectedDate, viewMode]);
 
+  useEffect(() => {
+    if (openCreateModal) {
+      openModal();
+      onCreateModalOpened?.();
+    }
+  }, [openCreateModal, patients]);
+
   const fetchAppointments = async () => {
     try {
-      const res = await fetch(`/api/appointments?date=${selectedDate}&view=${viewMode}`);
+      const res = await apiFetch(`/api/appointments?date=${selectedDate}&view=${viewMode}`);
       const data = await res.json();
       if (data.success) {
         setAppointments(data.data);
@@ -44,7 +72,7 @@ export default function Calendar() {
 
   const fetchPatients = async () => {
     try {
-      const res = await fetch('/api/patients');
+      const res = await apiFetch('/api/patients');
       const data = await res.json();
       if (data.success) {
         setPatients(data.data);
@@ -63,7 +91,7 @@ export default function Calendar() {
         : '/api/appointments';
       const method = editingAppointment ? 'PUT' : 'POST';
       
-      const res = await fetch(url, {
+      const res = await apiFetch(url, {
         method,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(formData)
@@ -71,13 +99,14 @@ export default function Calendar() {
       
       const data = await res.json();
       if (data.success) {
-        fetchAppointments();
+        await fetchAppointments();
         setShowModal(false);
+        showToast(editingAppointment ? 'Termin aktualisiert.' : 'Termin erstellt.', 'success');
       } else {
-        alert(data.error || 'Fehler beim Speichern');
+        showToast(data.error || 'Fehler beim Speichern', 'error');
       }
-    } catch (error) {
-      alert('Fehler beim Speichern');
+    } catch {
+      showToast('Fehler beim Speichern', 'error');
     }
   };
 
@@ -85,16 +114,18 @@ export default function Calendar() {
   // const handleDelete = async (id: number) => { ... };
 
   const handleCancel = async (id: number) => {
-    if (!confirm('Termin absagen?')) return;
-    
     try {
-      const res = await fetch(`/api/appointments/${id}/cancel`, { method: 'POST' });
+      const res = await apiFetch(`/api/appointments/${id}/cancel`, { method: 'POST' });
       const data = await res.json();
       if (data.success) {
-        fetchAppointments();
+        await fetchAppointments();
+        setAppointmentToCancel(null);
+        showToast('Termin abgesagt.', 'success');
+      } else {
+        showToast(data.error || 'Fehler beim Absagen', 'error');
       }
-    } catch (error) {
-      alert('Fehler beim Absagen');
+    } catch {
+      showToast('Fehler beim Absagen', 'error');
     }
   };
 
@@ -127,7 +158,60 @@ export default function Calendar() {
 
   const openTreatmentModal = (apt: Appointment) => {
     setEditingAppointment(apt);
+    setTreatmentNotes(apt.treatment_notes || '');
+
+    const services = Array.isArray(apt.treatment_services)
+      ? apt.treatment_services
+      : typeof apt.treatment_services === 'string' && apt.treatment_services.trim().length > 0
+        ? (() => {
+            try {
+              return JSON.parse(apt.treatment_services) as string[];
+            } catch {
+              return [];
+            }
+          })()
+        : [];
+
+    setSelectedServices(services);
+    setNextAppointmentDate(apt.next_appointment_date || '');
+    setTreatmentDraftSaved(false);
     setShowTreatmentModal(true);
+  };
+
+  const toggleService = (service: string) => {
+    setSelectedServices((current) =>
+      current.includes(service) ? current.filter((entry) => entry !== service) : [...current, service]
+    );
+  };
+
+  const saveTreatmentDraft = async () => {
+    if (!editingAppointment?.id) return;
+
+    try {
+      const res = await apiFetch(`/api/appointments/${editingAppointment.id}/treatment`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          treatment_notes: treatmentNotes,
+          treatment_services: selectedServices,
+          next_appointment_date: nextAppointmentDate,
+        })
+      });
+
+      const data = await res.json();
+      if (!data.success) {
+        showToast(data.error || 'Fehler beim Speichern der Behandlung', 'error');
+        return;
+      }
+
+      await fetchAppointments();
+      setTreatmentDraftSaved(true);
+      setTimeout(() => setTreatmentDraftSaved(false), 2000);
+      setShowTreatmentModal(false);
+      showToast('Behandlung gespeichert.', 'success');
+    } catch {
+      showToast('Fehler beim Speichern der Behandlung', 'error');
+    }
   };
 
   const navigateDate = (direction: number) => {
@@ -217,61 +301,63 @@ export default function Calendar() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-        <div>
-          <h2 className="text-2xl font-bold text-text-primary">Behandlungen</h2>
-          <p className="text-text-secondary">{appointments.length} Termine</p>
-        </div>
-        <div className="flex gap-2">
+      <PageHeader
+        title="Behandlungen"
+        description={`${appointments.length} Termine`}
+        badge={<Badge variant="info">{viewMode === 'day' ? 'Tag' : viewMode === 'week' ? 'Woche' : 'Monat'}</Badge>}
+        actions={
+          <div className="flex gap-2">
           {/* View Mode Toggle */}
           <div className="bg-white border border-gray-200 rounded-lg p-1 flex">
-            <button
+            <Button
               onClick={() => setViewMode('day')}
-              className={`px-3 py-1 rounded ${viewMode === 'day' ? 'bg-primary text-white' : 'hover:bg-gray-100'}`}
+              size="sm"
+              variant={viewMode === 'day' ? 'primary' : 'ghost'}
             >
               Tag
-            </button>
-            <button
+            </Button>
+            <Button
               onClick={() => setViewMode('week')}
-              className={`px-3 py-1 rounded ${viewMode === 'week' ? 'bg-primary text-white' : 'hover:bg-gray-100'}`}
+              size="sm"
+              variant={viewMode === 'week' ? 'primary' : 'ghost'}
             >
               Woche
-            </button>
-            <button
+            </Button>
+            <Button
               onClick={() => setViewMode('month')}
-              className={`px-3 py-1 rounded ${viewMode === 'month' ? 'bg-primary text-white' : 'hover:bg-gray-100'}`}
+              size="sm"
+              variant={viewMode === 'month' ? 'primary' : 'ghost'}
             >
               Monat
-            </button>
+            </Button>
           </div>
-          <button
-            onClick={() => openModal()}
-            className="bg-primary text-white px-4 py-2 rounded-lg font-medium hover:bg-blue-700 transition-colors"
-          >
+          <Button onClick={() => openModal()}>
             + Neuer Termin
-          </button>
-        </div>
-      </div>
+          </Button>
+          </div>
+        }
+      />
 
       {/* Date Navigation */}
       <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
         <div className="flex items-center justify-between">
-          <button
+          <Button
             onClick={() => navigateDate(-1)}
-            className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+            size="icon"
+            variant="ghost"
           >
             ←
-          </button>
+          </Button>
           <div className="text-center">
             <span className="font-medium text-lg">{formatDate(selectedDate)}</span>
           </div>
-          <button
+          <Button
             onClick={() => navigateDate(1)}
-            className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+            size="icon"
+            variant="ghost"
           >
             →
-          </button>
+          </Button>
         </div>
       </div>
 
@@ -301,35 +387,39 @@ export default function Calendar() {
                             <div className="flex items-center gap-2">
                               <span className="font-mono text-sm text-primary">{apt.time_start} - {apt.time_end}</span>
                               {apt.sms_reminder === 1 && <span className="text-green-500" title="SMS aktiv">✓</span>}
-                              <button
+                              <Button
                                 onClick={() => openTreatmentModal(apt)}
-                                className="px-3 py-1 bg-primary text-white text-sm rounded hover:bg-blue-700"
+                                size="sm"
                               >
                                 Behandeln
-                              </button>
-                              <button
+                              </Button>
+                              <Button
                                 onClick={() => openModal(apt)}
-                                className="p-1 hover:bg-gray-200 rounded"
+                                size="icon"
+                                variant="ghost"
                               >
                                 ✏️
-                              </button>
-                              <button
-                                onClick={() => { if (confirm('Absagen?')) handleCancel(apt.id!); }}
-                                className="p-1 hover:bg-red-100 text-red-500 rounded"
+                              </Button>
+                              <Button
+                                onClick={() => setAppointmentToCancel(apt)}
+                                size="icon"
+                                variant="ghost"
+                                className="text-red-500 hover:bg-red-50 hover:text-red-600"
                               >
                                 ×
-                              </button>
+                              </Button>
                             </div>
                           </div>
                         </div>
                       ) : null
                     ) : (
-                      <button
+                      <Button
                         onClick={() => { setFormData({ ...formData, date: selectedDate, time_start: time }); openModal(); }}
-                        className="w-full h-full min-h-[44px] border-2 border-dashed border-gray-200 rounded-lg hover:border-primary/50 hover:bg-blue-50 transition-colors text-text-secondary hover:text-primary text-left px-2"
+                        variant="ghost"
+                        className="h-full min-h-[44px] w-full justify-start rounded-xl border-2 border-dashed border-gray-200 px-3 text-left text-text-secondary hover:border-primary/50 hover:bg-blue-50 hover:text-primary"
                       >
                         + Termin
-                      </button>
+                      </Button>
                     )}
                   </div>
                 </div>
@@ -380,12 +470,14 @@ export default function Calendar() {
                           <div className="text-xs text-primary">{aptOnDay.time_start}-{aptOnDay.time_end}</div>
                         </div>
                       ) : (
-                        <button
+                        <Button
                           onClick={() => { setFormData({ ...formData, date: dateStr, time_start: time }); openModal(); }}
-                          className="w-full h-full text-gray-300 hover:text-primary text-lg"
+                          size="sm"
+                          variant="ghost"
+                          className="h-full w-full text-lg text-gray-300 hover:text-primary"
                         >
                           +
-                        </button>
+                        </Button>
                       )}
                     </div>
                   );
@@ -464,7 +556,7 @@ export default function Calendar() {
                   required
                   value={formData.patient_id}
                   onChange={(e) => setFormData({ ...formData, patient_id: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary"
+                  className={formControlClassName}
                 >
                   <option value="">Patient auswählen...</option>
                   {patients.map(p => (
@@ -481,7 +573,7 @@ export default function Calendar() {
                     required
                     value={formData.date}
                     onChange={(e) => setFormData({ ...formData, date: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary"
+                    className={formControlClassName}
                   />
                 </div>
                 <div>
@@ -489,7 +581,7 @@ export default function Calendar() {
                   <select
                     value={formData.treatment_type}
                     onChange={(e) => setFormData({ ...formData, treatment_type: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary"
+                    className={formControlClassName}
                   >
                     <option value="Physiotherapie">Physiotherapie</option>
                     <option value="Massage">Massage</option>
@@ -508,7 +600,7 @@ export default function Calendar() {
                     required
                     value={formData.time_start}
                     onChange={(e) => setFormData({ ...formData, time_start: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary font-mono"
+                    className={monoFormControlClassName}
                   />
                 </div>
                 <div>
@@ -518,7 +610,7 @@ export default function Calendar() {
                     required
                     value={formData.time_end}
                     onChange={(e) => setFormData({ ...formData, time_end: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary font-mono"
+                    className={monoFormControlClassName}
                   />
                 </div>
               </div>
@@ -528,7 +620,7 @@ export default function Calendar() {
                 <select
                   value={formData.sms_reminder}
                   onChange={(e) => setFormData({ ...formData, sms_reminder: parseInt(e.target.value) })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary"
+                  className={formControlClassName}
                 >
                   <option value="0">Keine</option>
                   <option value="1">SMS (24h vorher)</option>
@@ -543,25 +635,26 @@ export default function Calendar() {
                   onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
                   rows={3}
                   placeholder="Organisatorisches, Besonderheiten..."
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary"
+                  className={formControlClassName}
                 />
               </div>
             </form>
             <div className="px-6 py-4 border-t border-gray-200 flex-shrink-0 flex gap-3">
-              <button
+              <Button
                 type="button"
                 onClick={() => setShowModal(false)}
-                className="flex-1 px-4 py-2 border border-gray-300 rounded-lg font-medium hover:bg-gray-50"
+                className="flex-1"
+                variant="outline"
               >
                 Abbrechen
-              </button>
-              <button
+              </Button>
+              <Button
                 type="submit"
                 form="appointment-form"
-                className="flex-1 px-4 py-2 bg-primary text-white rounded-lg font-medium hover:bg-blue-700"
+                className="flex-1"
               >
                 {editingAppointment ? 'Speichern' : 'Erstellen'}
-              </button>
+              </Button>
             </div>
           </div>
         </div>
@@ -583,13 +676,13 @@ export default function Calendar() {
               {/* Tabs */}
               <div className="border-b border-gray-200">
                 <nav className="flex gap-4">
-                  <button className="pb-2 border-b-2 border-primary font-medium text-primary">
+                  <button className="border-b-2 border-primary pb-2 font-medium text-primary">
                     Behandlung
                   </button>
-                  <button className="pb-2 border-b-2 border-transparent hover:border-gray-300">
+                  <button className="border-b-2 border-transparent pb-2 hover:border-gray-300">
                     Dokumente
                   </button>
-                  <button className="pb-2 border-b-2 border-transparent hover:border-gray-300">
+                  <button className="border-b-2 border-transparent pb-2 hover:border-gray-300">
                     Finanzen
                   </button>
                 </nav>
@@ -601,8 +694,10 @@ export default function Calendar() {
                   <label className="block text-sm font-medium text-text-primary mb-1">Behandlungsverlauf</label>
                   <textarea
                     rows={4}
+                    value={treatmentNotes}
+                    onChange={(e) => setTreatmentNotes(e.target.value)}
                     placeholder="Behandlung dokumentieren..."
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary"
+                    className={formControlClassName}
                   />
                 </div>
 
@@ -611,15 +706,15 @@ export default function Calendar() {
                   <div className="border border-gray-200 rounded-lg p-3 space-y-2">
                     <div className="flex justify-between items-center">
                       <span>Manuelle Therapie (MT)</span>
-                      <input type="checkbox" className="rounded" />
+                      <input type="checkbox" checked={selectedServices.includes('MT')} onChange={() => toggleService('MT')} className="rounded" />
                     </div>
                     <div className="flex justify-between items-center">
                       <span>Krankengymnastik (KG)</span>
-                      <input type="checkbox" className="rounded" />
+                      <input type="checkbox" checked={selectedServices.includes('KG')} onChange={() => toggleService('KG')} className="rounded" />
                     </div>
                     <div className="flex justify-between items-center">
                       <span>MLD</span>
-                      <input type="checkbox" className="rounded" />
+                      <input type="checkbox" checked={selectedServices.includes('MLD')} onChange={() => toggleService('MLD')} className="rounded" />
                     </div>
                   </div>
                 </div>
@@ -629,32 +724,60 @@ export default function Calendar() {
                   <div className="flex gap-2">
                     <input
                       type="date"
-                      className="flex-1 px-3 py-2 border border-gray-300 rounded-lg"
+                      value={nextAppointmentDate}
+                      onChange={(e) => setNextAppointmentDate(e.target.value)}
+                      className={formControlClassName}
                     />
-                    <button className="px-4 py-2 bg-primary text-white rounded-lg hover:bg-blue-700">
-                      + Termin
-                    </button>
+                    <Button
+                      type="button"
+                      onClick={saveTreatmentDraft}
+                    >
+                      Vormerken
+                    </Button>
                   </div>
                 </div>
               </div>
             </div>
             <div className="px-6 py-4 border-t border-gray-200 flex-shrink-0 flex gap-3">
-              <button
+              <Button
                 onClick={() => setShowTreatmentModal(false)}
-                className="flex-1 px-4 py-2 border border-gray-300 rounded-lg font-medium hover:bg-gray-50"
+                className="flex-1"
+                variant="outline"
               >
                 Schließen
-              </button>
-              <button
-                onClick={() => { alert('Behandlung gespeichert!'); setShowTreatmentModal(false); }}
-                className="flex-1 px-4 py-2 bg-primary text-white rounded-lg font-medium hover:bg-blue-700"
+              </Button>
+              <Button
+                onClick={saveTreatmentDraft}
+                className="flex-1"
               >
-                Speichern
-              </button>
+                {treatmentDraftSaved ? '✓ Gespeichert' : 'Behandlung speichern'}
+              </Button>
             </div>
           </div>
         </div>
       )}
+
+      <ConfirmDialog
+        isOpen={appointmentToCancel !== null}
+        title="Termin absagen?"
+        description={
+          appointmentToCancel ? (
+            <>
+              Der Termin von <span className="font-medium text-slate-900">{appointmentToCancel.patient_name}</span> am{' '}
+              <span className="font-medium text-slate-900">{appointmentToCancel.date}</span> um{' '}
+              <span className="font-medium text-slate-900">{appointmentToCancel.time_start}</span> wird abgesagt.
+            </>
+          ) : ''
+        }
+        confirmLabel="Absagen"
+        confirmVariant="outline"
+        onCancel={() => setAppointmentToCancel(null)}
+        onConfirm={() => {
+          if (appointmentToCancel?.id) {
+            void handleCancel(appointmentToCancel.id);
+          }
+        }}
+      />
     </div>
   );
 }

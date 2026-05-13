@@ -1,17 +1,87 @@
-import { useState, useEffect } from 'react';
+import { type ReactNode, useEffect, useState } from 'react';
+import {
+  Activity,
+  ArrowDownRight,
+  ArrowUpRight,
+  CalendarClock,
+  CalendarDays,
+  CircleDollarSign,
+  FilePlus2,
+  FolderPlus,
+  HeartPulse,
+  Inbox,
+  Receipt,
+  Users,
+} from 'lucide-react';
+import { Badge } from '../components/ui/Badge';
+import { Button } from '../components/ui/Button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/Card';
+import { PageHeader } from '../components/ui/PageHeader';
+import { apiFetch } from '../lib/api';
 import { DashboardStats } from '../types';
 
 type ExtendedStats = Omit<DashboardStats, 'today_details'> & {
-  today_details: any[];
+  today_details: Array<{
+    id: number;
+    patient_name: string;
+    treatment_type: string;
+    time_start: string;
+    time_end: string;
+    sms_reminder: number;
+  }>;
   unpaid_invoices_total: number;
   this_month_appointments: number;
   this_month_revenue: number;
   last_month_revenue: number;
-  upcoming_this_week: any[];
+  upcoming_this_week: Array<{
+    id?: number;
+    date: string;
+    patient_name: string;
+    treatment_type: string;
+    time_start: string;
+    time_end: string;
+  }>;
   six_months_revenue: { month: string; revenue: number }[];
 };
 
-export default function Dashboard() {
+type DashboardProps = {
+  onNavigate?: (page: 'dashboard' | 'calendar' | 'patients' | 'invoices' | 'expenses') => void;
+  onQuickAction?: (action: 'newAppointment' | 'newPatient' | 'newInvoice' | 'overview') => void;
+};
+
+type StatCardProps = {
+  title: string;
+  value: string | number;
+  detail: string;
+  icon: ReactNode;
+  tone?: 'blue' | 'emerald' | 'amber' | 'slate';
+};
+
+const statToneClasses: Record<NonNullable<StatCardProps['tone']>, string> = {
+  blue: 'bg-blue-50 text-blue-700',
+  emerald: 'bg-emerald-50 text-emerald-700',
+  amber: 'bg-amber-50 text-amber-700',
+  slate: 'bg-slate-100 text-slate-700',
+};
+
+function StatCard({ detail, icon, title, tone = 'blue', value }: StatCardProps) {
+  return (
+    <Card>
+      <CardContent className="flex items-start justify-between">
+        <div>
+          <p className="text-sm font-medium text-slate-500">{title}</p>
+          <p className="mt-2 text-3xl font-semibold tracking-tight text-slate-900">{value}</p>
+          <p className="mt-1 text-sm text-slate-400">{detail}</p>
+        </div>
+        <div className={['flex h-11 w-11 items-center justify-center rounded-xl', statToneClasses[tone]].join(' ')}>
+          {icon}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function Dashboard({ onNavigate, onQuickAction }: DashboardProps) {
   const [stats, setStats] = useState<ExtendedStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [currentTime, setCurrentTime] = useState(new Date());
@@ -23,13 +93,27 @@ export default function Dashboard() {
 
   useEffect(() => {
     fetchStats();
-    const timer = setInterval(() => setCurrentTime(new Date()), 60000);
-    return () => clearInterval(timer);
+
+    if (typeof window !== 'undefined') {
+      const rawDraft = window.localStorage.getItem('physioflow.invoiceDraft');
+      if (rawDraft) {
+        try {
+          const draft = JSON.parse(rawDraft) as { units?: string; rate?: string };
+          if (draft.units) setUnits(draft.units);
+          if (draft.rate) setRate(draft.rate);
+        } catch (error) {
+          console.error('Failed to load invoice draft:', error);
+        }
+      }
+    }
+
+    const timer = window.setInterval(() => setCurrentTime(new Date()), 60000);
+    return () => window.clearInterval(timer);
   }, []);
 
   const fetchStats = async () => {
     try {
-      const res = await fetch('/api/dashboard');
+      const res = await apiFetch('/api/dashboard');
       const data = await res.json();
       if (data.success) {
         setStats(data.data);
@@ -42,22 +126,23 @@ export default function Dashboard() {
   };
 
   useEffect(() => {
-    // const u = parseFloat(units) || 0;
-    // const r = parseFloat(rate) || 0;
     setCalculatedTotal((parseFloat(units) || 0) * (parseFloat(rate) || 0));
   }, [units, rate]);
 
   const handleSaveDraft = () => {
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem('physioflow.invoiceDraft', JSON.stringify({ units, rate }));
+    }
+
     setSavedDraft(true);
-    setTimeout(() => setSavedDraft(false), 2000);
+    window.setTimeout(() => setSavedDraft(false), 2000);
   };
 
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('de-AT', {
+  const formatCurrency = (amount: number) =>
+    new Intl.NumberFormat('de-AT', {
       style: 'currency',
-      currency: 'EUR'
+      currency: 'EUR',
     }).format(amount);
-  };
 
   const getGreeting = () => {
     const hour = currentTime.getHours();
@@ -66,362 +151,403 @@ export default function Dashboard() {
     return 'Guten Abend';
   };
 
+  const monthRevenueDiff = (stats?.this_month_revenue || 0) - (stats?.last_month_revenue || 0);
+  const monthRevenuePct =
+    stats?.last_month_revenue && stats.last_month_revenue > 0
+      ? Math.round((monthRevenueDiff / stats.last_month_revenue) * 100)
+      : 0;
+
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-96">
-        <div className="w-8 h-8 border-2 border-blue-200 border-t-blue-600 rounded-full animate-spin"></div>
+      <div className="flex h-96 items-center justify-center">
+        <div className="h-9 w-9 animate-spin rounded-full border-2 border-slate-200 border-t-blue-600" />
       </div>
     );
   }
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="bg-white rounded-xl border border-gray-200 px-6 py-5 shadow-sm">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-semibold text-gray-900">{getGreeting()}</h1>
-            <p className="text-gray-500 mt-1">
-              {currentTime.toLocaleDateString('de-AT', {
-                weekday: 'long',
-                year: 'numeric',
-                month: 'long',
-                day: 'numeric'
-              })}
-            </p>
-          </div>
-          <div className="flex items-center gap-3">
-            <span className="text-2xl">🩺</span>
-            <span className="font-semibold text-gray-700">PhysioFlow</span>
-          </div>
-        </div>
+      <PageHeader
+        title={getGreeting()}
+        description={currentTime.toLocaleDateString('de-AT', {
+          weekday: 'long',
+          year: 'numeric',
+          month: 'long',
+          day: 'numeric',
+        })}
+        icon={<HeartPulse className="h-6 w-6" />}
+        badge={<Badge variant="info">Dashboard</Badge>}
+        actions={
+          <>
+            <Badge variant="neutral">
+              <Activity className="h-3.5 w-3.5" />
+              Live
+            </Badge>
+            <Button
+              variant="secondary"
+              icon={<CalendarDays className="h-4 w-4" />}
+              onClick={() => (onQuickAction ? onQuickAction('newAppointment') : onNavigate?.('calendar'))}
+            >
+              Neuer Termin
+            </Button>
+          </>
+        }
+      />
+
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <StatCard
+          title="Heute"
+          value={stats?.today_appointments || 0}
+          detail="Termine geplant"
+          icon={<CalendarDays className="h-5 w-5" />}
+          tone="blue"
+        />
+        <StatCard
+          title="Diese Woche"
+          value={stats?.upcoming_appointments || 0}
+          detail="Anstehende Behandlungen"
+          icon={<CalendarClock className="h-5 w-5" />}
+          tone="emerald"
+        />
+        <StatCard
+          title="Offene Rechnungen"
+          value={stats?.unpaid_invoices || 0}
+          detail={formatCurrency(stats?.unpaid_invoices_total || 0)}
+          icon={<Receipt className="h-5 w-5" />}
+          tone="amber"
+        />
+        <StatCard
+          title="Patienten"
+          value={stats?.total_patients || 0}
+          detail="Registriert"
+          icon={<Users className="h-5 w-5" />}
+          tone="slate"
+        />
       </div>
 
-      {/* Stats Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-white rounded-xl border border-gray-200 p-5 hover:border-blue-300 transition-colors shadow-sm">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm text-gray-500 font-medium">Heute</p>
-              <p className="text-3xl font-semibold text-gray-900 mt-1">{stats?.today_appointments || 0}</p>
-              <p className="text-xs text-gray-400 mt-1">Termine</p>
-            </div>
-            <div className="w-10 h-10 bg-blue-50 rounded-lg flex items-center justify-center text-lg">📅</div>
-          </div>
-        </div>
-
-        <div className="bg-white rounded-xl border border-gray-200 p-5 hover:border-blue-300 transition-colors shadow-sm">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm text-gray-500 font-medium">Diese Woche</p>
-              <p className="text-3xl font-semibold text-gray-900 mt-1">{stats?.upcoming_appointments || 0}</p>
-              <p className="text-xs text-gray-400 mt-1">Anstehend</p>
-            </div>
-            <div className="w-10 h-10 bg-green-50 rounded-lg flex items-center justify-center text-lg">📆</div>
-          </div>
-        </div>
-
-        <div className="bg-white rounded-xl border border-gray-200 p-5 hover:border-blue-300 transition-colors shadow-sm">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm text-gray-500 font-medium">Offene Rechnungen</p>
-              <p className="text-3xl font-semibold text-gray-900 mt-1">{stats?.unpaid_invoices || 0}</p>
-              <p className="text-sm text-amber-600 font-medium mt-1">
-                {formatCurrency(stats?.unpaid_invoices_total || 0)}
-              </p>
-            </div>
-            <div className="w-10 h-10 bg-amber-50 rounded-lg flex items-center justify-center text-lg">💰</div>
-          </div>
-        </div>
-
-        <div className="bg-white rounded-xl border border-gray-200 p-5 hover:border-blue-300 transition-colors shadow-sm">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm text-gray-500 font-medium">Patienten</p>
-              <p className="text-3xl font-semibold text-gray-900 mt-1">{stats?.total_patients || 0}</p>
-              <p className="text-xs text-gray-400 mt-1">Registriert</p>
-            </div>
-            <div className="w-10 h-10 bg-purple-50 rounded-lg flex items-center justify-center text-lg">👥</div>
-          </div>
-        </div>
-      </div>
-
-      {/* Revenue & Quick Stats Row */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        {/* Monthly Revenue Card */}
-        <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
-          <div className="flex items-center justify-between mb-3">
-            <p className="text-sm text-gray-500 font-medium">Umsatz {currentTime.toLocaleDateString('de-AT', { month: 'long' })}</p>
-            <span className="text-lg">💶</span>
-          </div>
-          <p className="text-3xl font-bold text-gray-900">{formatCurrency(stats?.this_month_revenue || 0)}</p>
-          <div className="mt-3 flex items-center gap-2">
-            {(() => {
-              const diff = (stats?.this_month_revenue || 0) - (stats?.last_month_revenue || 0);
-              const pct = stats?.last_month_revenue && stats.last_month_revenue > 0
-                ? Math.round((diff / stats.last_month_revenue) * 100)
-                : 0;
-              const isPositive = diff >= 0;
-              return (
-                <>
-                  <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${isPositive ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>
-                    {isPositive ? '↑' : '↓'} {Math.abs(pct)}%
-                  </span>
-                  <span className="text-xs text-gray-400">
-                    vs. {formatCurrency(stats?.last_month_revenue || 0)} (Vormonat)
-                  </span>
-                </>
-              );
-            })()}
-          </div>
-        </div>
-
-        {/* Appointments this month */}
-        <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
-          <div className="flex items-center justify-between mb-3">
-            <p className="text-sm text-gray-500 font-medium">Termine diesen Monat</p>
-            <span className="text-lg">🗓️</span>
-          </div>
-          <p className="text-3xl font-semibold text-gray-900">{stats?.this_month_appointments || 0}</p>
-          <p className="text-xs text-gray-400 mt-1">Behandlungen durchgeführt</p>
-        </div>
-
-        {/* Outstanding amount */}
-        <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
-          <div className="flex items-center justify-between mb-3">
-            <p className="text-sm text-gray-500 font-medium">Ausständiger Betrag</p>
-            <span className="text-lg">⏳</span>
-          </div>
-          <p className="text-3xl font-semibold text-amber-600">{formatCurrency(stats?.unpaid_invoices_total || 0)}</p>
-          <p className="text-xs text-gray-400 mt-1">{stats?.unpaid_invoices || 0} unbezahlte Rechnungen</p>
-        </div>
-      </div>
-
-      {/* Two Column Layout */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Today's Appointments */}
-        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm">
-          <div className="px-5 py-4 border-b border-gray-100 bg-gray-50">
-            <div className="flex items-center justify-between">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+        <Card>
+          <CardContent>
+            <div className="flex items-start justify-between">
               <div>
-                <h3 className="font-semibold text-gray-900">Heutige Termine</h3>
-                <p className="text-sm text-gray-500">{stats?.today_appointments || 0} Termine geplant</p>
+                <p className="text-sm font-medium text-slate-500">
+                  Umsatz {currentTime.toLocaleDateString('de-AT', { month: 'long' })}
+                </p>
+                <p className="mt-2 text-3xl font-semibold tracking-tight text-slate-900">
+                  {formatCurrency(stats?.this_month_revenue || 0)}
+                </p>
+                <div className="mt-3 flex flex-wrap items-center gap-2">
+                  <Badge variant={monthRevenueDiff >= 0 ? 'success' : 'warning'}>
+                    {monthRevenueDiff >= 0 ? (
+                      <ArrowUpRight className="h-3.5 w-3.5" />
+                    ) : (
+                      <ArrowDownRight className="h-3.5 w-3.5" />
+                    )}
+                    {Math.abs(monthRevenuePct)}%
+                  </Badge>
+                  <span className="text-xs text-slate-400">
+                    vs. {formatCurrency(stats?.last_month_revenue || 0)} im Vormonat
+                  </span>
+                </div>
               </div>
-              <span className="text-lg">📋</span>
+              <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-blue-50 text-blue-700">
+                <CircleDollarSign className="h-5 w-5" />
+              </div>
             </div>
-          </div>
-          <div className="p-5">
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardContent>
+            <div className="flex items-start justify-between">
+              <div>
+                <p className="text-sm font-medium text-slate-500">Termine diesen Monat</p>
+                <p className="mt-2 text-3xl font-semibold tracking-tight text-slate-900">
+                  {stats?.this_month_appointments || 0}
+                </p>
+                <p className="mt-1 text-sm text-slate-400">Behandlungen durchgeführt</p>
+              </div>
+              <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-emerald-50 text-emerald-700">
+                <CalendarClock className="h-5 w-5" />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardContent>
+            <div className="flex items-start justify-between">
+              <div>
+                <p className="text-sm font-medium text-slate-500">Ausständiger Betrag</p>
+                <p className="mt-2 text-3xl font-semibold tracking-tight text-amber-600">
+                  {formatCurrency(stats?.unpaid_invoices_total || 0)}
+                </p>
+                <p className="mt-1 text-sm text-slate-400">{stats?.unpaid_invoices || 0} unbezahlte Rechnungen</p>
+              </div>
+              <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-amber-50 text-amber-700">
+                <Receipt className="h-5 w-5" />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
+        <Card>
+          <CardHeader>
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <CardTitle>Heutige Termine</CardTitle>
+                <CardDescription>{stats?.today_appointments || 0} Termine geplant</CardDescription>
+              </div>
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-50 text-blue-700">
+                <CalendarDays className="h-5 w-5" />
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent>
             {stats?.today_details && stats.today_details.length > 0 ? (
               <div className="space-y-3">
-                {stats.today_details.map((apt: any) => (
+                {stats.today_details.map((apt) => (
                   <div
                     key={apt.id}
-                    className="flex items-center gap-4 p-3 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors cursor-pointer border-l-4 border-blue-500"
+                    className="flex items-center gap-4 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3"
                   >
-                    <div className="w-14 h-12 bg-white rounded-lg flex flex-col items-center justify-center shadow-sm">
-                      <span className="text-sm font-bold text-gray-700">{apt.time_start.split(':')[0]}</span>
-                      <span className="text-xs text-gray-500">{apt.time_start.split(':')[1]}</span>
+                    <div className="flex h-12 w-14 flex-col items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700">
+                      <span className="text-sm font-semibold">{apt.time_start.split(':')[0]}</span>
+                      <span className="text-xs text-slate-500">{apt.time_start.split(':')[1]}</span>
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="font-medium text-gray-900">{apt.patient_name}</p>
-                      <p className="text-sm text-gray-500">{apt.treatment_type}</p>
+                    <div className="min-w-0 flex-1">
+                      <p className="font-medium text-slate-900">{apt.patient_name}</p>
+                      <p className="text-sm text-slate-500">{apt.treatment_type}</p>
                     </div>
                     <div className="text-right">
-                      <p className="text-sm font-medium text-gray-700">{apt.time_end}</p>
-                      {apt.sms_reminder === 1 && (
-                        <span className="text-xs text-emerald-600">✓ SMS</span>
-                      )}
+                      <p className="text-sm font-medium text-slate-700">{apt.time_end}</p>
+                      {apt.sms_reminder === 1 && <Badge variant="success">SMS aktiv</Badge>}
                     </div>
                   </div>
                 ))}
               </div>
             ) : (
-              <div className="text-center py-10">
-                <span className="text-4xl text-gray-300">📭</span>
-                <p className="text-gray-500 font-medium mt-2">Keine Termine heute</p>
-                <p className="text-gray-400 text-sm mt-1">Genießen Sie Ihren freien Tag!</p>
+              <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-slate-200 bg-slate-50 px-6 py-12 text-center">
+                <Inbox className="h-10 w-10 text-slate-300" />
+                <p className="mt-3 font-medium text-slate-600">Keine Termine heute</p>
+                <p className="mt-1 text-sm text-slate-400">Genießen Sie Ihren freien Tag.</p>
               </div>
             )}
-          </div>
-        </div>
+          </CardContent>
+        </Card>
 
-        {/* Upcoming This Week */}
-        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm">
-          <div className="px-5 py-4 border-b border-gray-100 bg-gray-50">
-            <div className="flex items-center justify-between">
+        <Card>
+          <CardHeader>
+            <div className="flex items-start justify-between gap-4">
               <div>
-                <h3 className="font-semibold text-gray-900">Diese Woche</h3>
-                <p className="text-sm text-gray-500">{stats?.upcoming_this_week?.length || 0} anstehende Termine</p>
+                <CardTitle>Diese Woche</CardTitle>
+                <CardDescription>{stats?.upcoming_this_week?.length || 0} anstehende Termine</CardDescription>
               </div>
-              <span className="text-lg">📆</span>
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-50 text-emerald-700">
+                <CalendarClock className="h-5 w-5" />
+              </div>
             </div>
-          </div>
-          <div className="p-5">
+          </CardHeader>
+          <CardContent>
             {stats?.upcoming_this_week && stats.upcoming_this_week.length > 0 ? (
-              <div className="space-y-2 max-h-72 overflow-y-auto">
-                {stats.upcoming_this_week.map((apt: any, idx: number) => {
-                  const date = new Date(apt.date + 'T00:00:00');
+              <div className="max-h-80 space-y-2 overflow-y-auto pr-1">
+                {stats.upcoming_this_week.map((apt, idx) => {
+                  const date = new Date(`${apt.date}T00:00:00`);
                   const today = new Date().toISOString().slice(0, 10);
                   const isToday = apt.date === today;
+
                   return (
-                    <div key={apt.id || idx} className="flex items-center gap-3 p-2.5 rounded-lg hover:bg-gray-50 transition-colors">
-                      <div className={`w-10 h-10 rounded-lg flex flex-col items-center justify-center text-xs font-bold ${isToday ? 'bg-blue-600 text-white' : 'bg-blue-50 text-blue-700'}`}>
+                    <div key={apt.id || idx} className="flex items-center gap-3 rounded-xl px-2 py-2 transition-colors hover:bg-slate-50">
+                      <div
+                        className={[
+                          'flex h-11 w-11 flex-col items-center justify-center rounded-xl text-xs font-semibold',
+                          isToday ? 'bg-blue-600 text-white' : 'bg-blue-50 text-blue-700',
+                        ].join(' ')}
+                      >
                         <span>{date.toLocaleDateString('de-AT', { day: '2-digit' })}</span>
-                        <span className="text-[10px] uppercase">{date.toLocaleDateString('de-AT', { weekday: 'short' })}</span>
+                        <span className="text-[10px] uppercase">
+                          {date.toLocaleDateString('de-AT', { weekday: 'short' })}
+                        </span>
                       </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="font-medium text-gray-900 text-sm truncate">{apt.patient_name}</p>
-                        <p className="text-xs text-gray-500">{apt.time_start} – {apt.time_end} · {apt.treatment_type}</p>
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-medium text-slate-900">{apt.patient_name}</p>
+                        <p className="text-xs text-slate-500">
+                          {apt.time_start} - {apt.time_end} · {apt.treatment_type}
+                        </p>
                       </div>
+                      {isToday && <Badge variant="info">Heute</Badge>}
                     </div>
                   );
                 })}
               </div>
             ) : (
-              <div className="text-center py-10">
-                <span className="text-4xl text-gray-300">📭</span>
-                <p className="text-gray-500 font-medium mt-2">Keine Termine diese Woche</p>
+              <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-slate-200 bg-slate-50 px-6 py-12 text-center">
+                <Inbox className="h-10 w-10 text-slate-300" />
+                <p className="mt-3 font-medium text-slate-600">Keine Termine diese Woche</p>
               </div>
             )}
-          </div>
-        </div>
+          </CardContent>
+        </Card>
       </div>
 
-      {/* Revenue Chart */}
       {stats?.six_months_revenue && stats.six_months_revenue.length > 0 && (
-        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm">
-          <div className="px-5 py-4 border-b border-gray-100 bg-gray-50">
-            <div className="flex items-center justify-between">
+        <Card>
+          <CardHeader>
+            <div className="flex items-start justify-between gap-4">
               <div>
-                <h3 className="font-semibold text-gray-900">Umsatzübersicht</h3>
-                <p className="text-sm text-gray-500">Letzte 6 Monate (bezahlte Honorarnoten)</p>
+                <CardTitle>Umsatzübersicht</CardTitle>
+                <CardDescription>Letzte 6 Monate, basierend auf bezahlten Honorarnoten</CardDescription>
               </div>
-              <span className="text-lg">📊</span>
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-100 text-slate-700">
+                <Activity className="h-5 w-5" />
+              </div>
             </div>
-          </div>
-          <div className="p-5">
+          </CardHeader>
+          <CardContent>
             {(() => {
-              const maxRev = Math.max(...stats.six_months_revenue.map(m => m.revenue), 1);
+              const maxRev = Math.max(...stats.six_months_revenue.map((month) => month.revenue), 1);
+
               return (
-                <div className="flex items-end gap-3 h-40">
-                  {stats.six_months_revenue.map((m, i) => {
-                    const heightPct = Math.max((m.revenue / maxRev) * 100, 2);
-                    const isCurrentMonth = i === stats.six_months_revenue.length - 1;
+                <div className="flex h-48 items-end gap-3">
+                  {stats.six_months_revenue.map((month, index) => {
+                    const heightPct = Math.max((month.revenue / maxRev) * 100, 6);
+                    const isCurrentMonth = index === stats.six_months_revenue.length - 1;
+
                     return (
-                      <div key={i} className="flex-1 flex flex-col items-center gap-1">
-                        <div className="w-full flex flex-col items-center justify-end" style={{ height: '140px' }}>
+                      <div key={month.month} className="flex flex-1 flex-col items-center gap-2">
+                        <div className="flex h-36 w-full items-end justify-center">
                           <div
-                            className={`w-full max-w-12 rounded-t-md transition-all ${isCurrentMonth ? 'bg-blue-600' : 'bg-blue-300'}`}
+                            className={[
+                              'w-full max-w-12 rounded-t-xl transition-all',
+                              isCurrentMonth ? 'bg-slate-900' : 'bg-blue-200',
+                            ].join(' ')}
                             style={{ height: `${heightPct}%` }}
-                            title={formatCurrency(m.revenue)}
+                            title={formatCurrency(month.revenue)}
                           />
                         </div>
-                        <span className={`text-xs font-medium ${isCurrentMonth ? 'text-blue-700 font-bold' : 'text-gray-500'}`}>
-                          {m.month}
+                        <span className={['text-xs font-medium', isCurrentMonth ? 'text-slate-900' : 'text-slate-500'].join(' ')}>
+                          {month.month}
                         </span>
-                        <span className="text-[10px] text-gray-400">{formatCurrency(m.revenue)}</span>
+                        <span className="text-[10px] text-slate-400">{formatCurrency(month.revenue)}</span>
                       </div>
                     );
                   })}
                 </div>
               );
             })()}
-          </div>
-        </div>
+          </CardContent>
+        </Card>
       )}
 
-      {/* Invoice Calculator */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm">
-          <div className="px-5 py-4 border-b border-gray-100 bg-gradient-to-r from-blue-600 to-blue-700">
-            <div className="flex items-center justify-between">
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
+        <Card>
+          <CardHeader className="bg-slate-900 text-white">
+            <div className="flex items-start justify-between gap-4">
               <div>
-                <h3 className="font-semibold text-white">Honorarnoten-Rechner</h3>
-                <p className="text-sm text-blue-100">Berechnung für eine Honorarnote</p>
+                <CardTitle className="text-white">Honorarnoten-Rechner</CardTitle>
+                <CardDescription className="text-slate-300">Berechnung für eine Honorarnote</CardDescription>
               </div>
-              <span className="text-lg text-white">💶</span>
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/10 text-white">
+                <CircleDollarSign className="h-5 w-5" />
+              </div>
             </div>
-          </div>
-          <div className="p-5 space-y-5">
-            <div className="grid grid-cols-2 gap-4">
+          </CardHeader>
+          <CardContent className="space-y-5">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">Einheiten</label>
+                <label className="mb-2 block text-sm font-medium text-slate-700">Einheiten</label>
                 <input
                   type="number"
                   value={units}
                   onChange={(e) => setUnits(e.target.value)}
-                  className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 font-mono"
+                  className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 font-mono text-sm text-slate-900 outline-none transition focus:border-blue-300 focus:ring-2 focus:ring-blue-100"
                   placeholder="10"
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">€ / Einheit</label>
+                <label className="mb-2 block text-sm font-medium text-slate-700">€ / Einheit</label>
                 <input
                   type="number"
                   value={rate}
                   onChange={(e) => setRate(e.target.value)}
-                  className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 font-mono"
+                  className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 font-mono text-sm text-slate-900 outline-none transition focus:border-blue-300 focus:ring-2 focus:ring-blue-100"
                   placeholder="50"
                 />
               </div>
             </div>
 
-            <div className="bg-gradient-to-r from-blue-50 to-blue-100 rounded-lg p-4 border border-blue-200">
-              <div className="flex justify-between items-center">
-                <span className="text-blue-700 font-medium">Gesamtbetrag:</span>
-                <span className="text-3xl font-bold text-blue-900 font-mono">
-                  {formatCurrency(calculatedTotal)}
-                </span>
+            <div className="rounded-2xl border border-blue-100 bg-blue-50 p-4">
+              <div className="flex items-center justify-between gap-4">
+                <span className="text-sm font-medium text-blue-700">Gesamtbetrag</span>
+                <span className="font-mono text-3xl font-semibold text-slate-900">{formatCurrency(calculatedTotal)}</span>
               </div>
-              <p className="text-xs text-blue-400 mt-2 text-center">
-                Steuerbefreit gemäß §6 Abs.1 Z 19 UStG
-              </p>
+              <p className="mt-2 text-xs text-blue-600">Steuerbefreit gemäß §6 Abs.1 Z 19 UStG</p>
             </div>
 
-            <button
+            <Button
+              variant={savedDraft ? 'secondary' : 'primary'}
               onClick={handleSaveDraft}
-              className={`w-full py-2.5 rounded-lg font-medium text-white transition-colors ${
-                savedDraft ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-blue-600 hover:bg-blue-700'
-              }`}
+              className="w-full"
             >
-              {savedDraft ? '✓ Gespeichert!' : 'Als Entwurf speichern'}
-            </button>
-          </div>
-        </div>
+              {savedDraft ? 'Lokal gespeichert' : 'Als Entwurf speichern'}
+            </Button>
+          </CardContent>
+        </Card>
 
-        {/* Quick Actions */}
-        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm">
-          <div className="px-5 py-4 border-b border-gray-100 bg-gray-50">
-            <div className="flex items-center justify-between">
+        <Card>
+          <CardHeader>
+            <div className="flex items-start justify-between gap-4">
               <div>
-                <h3 className="font-semibold text-gray-900">Schnellaktionen</h3>
-                <p className="text-sm text-gray-500">Häufig benötigte Funktionen</p>
+                <CardTitle>Schnellaktionen</CardTitle>
+                <CardDescription>Häufig benötigte Funktionen</CardDescription>
               </div>
-              <span className="text-lg">⚡</span>
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-100 text-slate-700">
+                <Activity className="h-5 w-5" />
+              </div>
             </div>
-          </div>
-          <div className="p-5">
-            <div className="grid grid-cols-2 gap-3">
-              <button className="flex items-center justify-center gap-2 p-4 bg-blue-50 rounded-xl border border-blue-100 hover:border-blue-400 hover:bg-blue-100 transition-all font-medium text-gray-700">
-                <span>📅</span>
-                <span>Neuer Termin</span>
-              </button>
-              <button className="flex items-center justify-center gap-2 p-4 bg-blue-50 rounded-xl border border-blue-100 hover:border-blue-400 hover:bg-blue-100 transition-all font-medium text-gray-700">
-                <span>👤</span>
-                <span>Neuer Patient</span>
-              </button>
-              <button className="flex items-center justify-center gap-2 p-4 bg-blue-50 rounded-xl border border-blue-100 hover:border-blue-400 hover:bg-blue-100 transition-all font-medium text-gray-700">
-                <span>📄</span>
-                <span>Neue Rechnung</span>
-              </button>
-              <button className="flex items-center justify-center gap-2 p-4 bg-blue-50 rounded-xl border border-blue-100 hover:border-blue-400 hover:bg-blue-100 transition-all font-medium text-gray-700">
-                <span>📊</span>
-                <span>Übersicht</span>
-              </button>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <Button
+                variant="outline"
+                icon={<CalendarDays className="h-4 w-4" />}
+                onClick={() => (onQuickAction ? onQuickAction('newAppointment') : onNavigate?.('calendar'))}
+                className="h-auto justify-start rounded-2xl px-4 py-4"
+              >
+                Neuer Termin
+              </Button>
+              <Button
+                variant="outline"
+                icon={<FolderPlus className="h-4 w-4" />}
+                onClick={() => (onQuickAction ? onQuickAction('newPatient') : onNavigate?.('patients'))}
+                className="h-auto justify-start rounded-2xl px-4 py-4"
+              >
+                Neuer Patient
+              </Button>
+              <Button
+                variant="outline"
+                icon={<FilePlus2 className="h-4 w-4" />}
+                onClick={() => (onQuickAction ? onQuickAction('newInvoice') : onNavigate?.('invoices'))}
+                className="h-auto justify-start rounded-2xl px-4 py-4"
+              >
+                Neue Rechnung
+              </Button>
+              <Button
+                variant="outline"
+                icon={<Receipt className="h-4 w-4" />}
+                onClick={() => (onQuickAction ? onQuickAction('overview') : onNavigate?.('dashboard'))}
+                className="h-auto justify-start rounded-2xl px-4 py-4"
+              >
+                Übersicht
+              </Button>
             </div>
-          </div>
-        </div>
+          </CardContent>
+        </Card>
       </div>
     </div>
   );
 }
+
+export default Dashboard;
