@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Expense } from '../types';
 import { Modal, showToast, ConfirmModal } from '../components/ui';
+import { formatCurrency } from '../utils/formatting';
 import { apiFetch } from '../utils/api.js';
 
 import { getTodayStr } from '../utils/date';
@@ -119,9 +120,7 @@ export default function Expenses() {
     });
   };
 
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('de-AT', { style: 'currency', currency: 'EUR' }).format(amount);
-  };
+
 
   if (loading) {
     return <div className="flex items-center justify-center h-64"><div className="w-8 h-8 border-2 border-blue-200 border-t-blue-600 rounded-full animate-spin"></div></div>;

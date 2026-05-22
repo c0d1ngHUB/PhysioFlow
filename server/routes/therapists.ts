@@ -2,6 +2,7 @@ import type { NextFunction, Request, Response } from 'express';
 import { Router } from 'express';
 import db from '../db/index.js';
 import { respondWithServerError } from '../utils/httpErrors.js';
+import { validateBody, therapistCreateSchema, therapistUpdateSchema } from '../utils/validation.js';
 
 const router = Router();
 
@@ -29,14 +30,9 @@ router.get('/', (_req, res) => {
   }
 });
 
-router.post('/', requireAdmin, (req, res) => {
-  const { name, color } = req.body ?? {};
-
-  if (!name || typeof name !== 'string') {
-    return res.status(400).json({ success: false, error: 'Name ist erforderlich' });
-  }
-
-  const safeColor = typeof color === 'string' && /^#[0-9A-Fa-f]{6}$/.test(color) ? color : '#2563EB';
+router.post('/', requireAdmin, validateBody(therapistCreateSchema), (req, res) => {
+  const { name, color } = req.body;
+  const safeColor = color || '#2563EB';
 
   try {
     const result = db.prepare(`
@@ -51,13 +47,9 @@ router.post('/', requireAdmin, (req, res) => {
   }
 });
 
-router.put('/:id', requireAdmin, (req, res) => {
-  const { name, color } = req.body ?? {};
-  const safeColor = typeof color === 'string' && /^#[0-9A-Fa-f]{6}$/.test(color) ? color : '#2563EB';
-
-  if (!name || typeof name !== 'string') {
-    return res.status(400).json({ success: false, error: 'Name ist erforderlich' });
-  }
+router.put('/:id', requireAdmin, validateBody(therapistUpdateSchema), (req, res) => {
+  const { name, color } = req.body;
+  const safeColor = color || '#2563EB';
 
   try {
     const result = db.prepare(`

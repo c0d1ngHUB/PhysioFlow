@@ -120,7 +120,7 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
       </div>
 
       {/* Stats Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
         {error ? (
           <>
             <WidgetError message={error} onRetry={fetchStats} />
@@ -135,7 +135,7 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
             <div>
               <p className="text-sm text-gray-500 font-medium">Heute</p>
               <p className="text-3xl font-semibold text-gray-900 mt-1">{stats?.today_appointments || 0}</p>
-              <p className="text-xs text-gray-400 mt-1">Termine</p>
+              <p className="text-xs text-gray-500 mt-1">{stats?.today_appointments ? 'Termine' : 'Keine Termine'}</p>
             </div>
             <div className="w-10 h-10 bg-blue-50 rounded-lg flex items-center justify-center text-lg">📅</div>
           </div>
@@ -146,7 +146,7 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
             <div>
               <p className="text-sm text-gray-500 font-medium">Diese Woche</p>
               <p className="text-3xl font-semibold text-gray-900 mt-1">{stats?.upcoming_appointments || 0}</p>
-              <p className="text-xs text-gray-400 mt-1">Anstehend</p>
+              <p className="text-xs text-gray-500 mt-1">{stats?.upcoming_appointments ? 'Anstehend' : 'Keine diese Woche'}</p>
             </div>
             <div className="w-10 h-10 bg-green-50 rounded-lg flex items-center justify-center text-lg">📆</div>
           </div>
@@ -158,7 +158,7 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
               <p className="text-sm text-gray-500 font-medium">Offene Rechnungen</p>
               <p className="text-3xl font-semibold text-gray-900 mt-1">{stats?.unpaid_invoices || 0}</p>
               <p className="text-sm text-amber-600 font-medium mt-1">
-                {formatCurrency(stats?.unpaid_invoices_total || 0)}
+                {stats?.unpaid_invoices ? formatCurrency(stats?.unpaid_invoices_total || 0) : <span className="text-emerald-600 text-sm">✓ Alle bezahlt</span>}
               </p>
             </div>
             <div className="w-10 h-10 bg-amber-50 rounded-lg flex items-center justify-center text-lg">💰</div>
@@ -170,7 +170,7 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
             <div>
               <p className="text-sm text-gray-500 font-medium">Patienten</p>
               <p className="text-3xl font-semibold text-gray-900 mt-1">{stats?.total_patients || 0}</p>
-              <p className="text-xs text-gray-400 mt-1">Registriert</p>
+              <p className="text-xs text-gray-500 mt-1">Registriert</p>
             </div>
             <div className="w-10 h-10 bg-purple-50 rounded-lg flex items-center justify-center text-lg">👥</div>
           </div>
@@ -180,7 +180,7 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
       </div>
 
       {/* Revenue & Quick Stats Row */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
         {error ? (
           <>
             <WidgetError message={error} onRetry={fetchStats} />
@@ -195,7 +195,7 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
             <p className="text-sm text-gray-500 font-medium">Umsatz {currentTime.toLocaleDateString('de-AT', { month: 'long' })}</p>
             <span className="text-lg">💶</span>
           </div>
-          <p className="text-3xl font-bold text-gray-900">{formatCurrency(stats?.this_month_revenue || 0)}</p>
+          <p className="text-3xl font-bold text-gray-900">{stats?.this_month_revenue ? formatCurrency(stats.this_month_revenue) : <span className="text-gray-400 text-lg">Noch kein Umsatz</span>}</p>
           <div className="mt-3 flex items-center gap-2">
             {(() => {
               const diff = (stats?.this_month_revenue || 0) - (stats?.last_month_revenue || 0);
@@ -208,7 +208,7 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
                   <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${isPositive ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>
                     {isPositive ? '↑' : '↓'} {Math.abs(pct)}%
                   </span>
-                  <span className="text-xs text-gray-400">
+                  <span className="text-xs text-gray-500">
                     vs. {formatCurrency(stats?.last_month_revenue || 0)} (Vormonat)
                   </span>
                 </>
@@ -224,7 +224,7 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
             <span className="text-lg">🗓️</span>
           </div>
           <p className="text-3xl font-semibold text-gray-900">{stats?.this_month_appointments || 0}</p>
-          <p className="text-xs text-gray-400 mt-1">Behandlungen durchgeführt</p>
+          <p className="text-xs text-gray-500 mt-1">{stats?.this_month_appointments ? 'Behandlungen durchgeführt' : 'Noch keine Termine'}</p>
         </div>
 
         {/* Outstanding amount */}
@@ -233,8 +233,8 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
             <p className="text-sm text-gray-500 font-medium">Ausständiger Betrag</p>
             <span className="text-lg">⏳</span>
           </div>
-          <p className="text-3xl font-semibold text-amber-600">{formatCurrency(stats?.unpaid_invoices_total || 0)}</p>
-          <p className="text-xs text-gray-400 mt-1">{stats?.unpaid_invoices || 0} unbezahlte Rechnungen</p>
+          <p className="text-3xl font-semibold text-amber-600">{stats?.unpaid_invoices ? formatCurrency(stats.unpaid_invoices_total || 0) : <span className="text-emerald-600 text-lg">✓ Alle bezahlt</span>}</p>
+          <p className="text-xs text-gray-500 mt-1">{stats?.unpaid_invoices ? `${stats.unpaid_invoices} unbezahlte Rechnungen` : 'Keine offenen Rechnungen'}</p>
         </div>
           </>
         )}
@@ -284,7 +284,7 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
               <div className="text-center py-10">
                 <span className="text-4xl text-gray-300">📭</span>
                 <p className="text-gray-500 font-medium mt-2">Keine Termine heute</p>
-                <p className="text-gray-400 text-sm mt-1">Genießen Sie Ihren freien Tag!</p>
+                <button onClick={() => onNavigate('calendar', 'appointment')} className="mt-2 text-sm text-blue-600 hover:text-blue-800 font-medium">＋ Termin erstellen</button>
               </div>
             )}
           </div>
@@ -350,16 +350,16 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
               <span className="text-lg">📊</span>
             </div>
           </div>
-          <div className="p-5">
+          <div className="p-5 overflow-x-auto">
             {(() => {
               const maxRev = Math.max(...stats.six_months_revenue.map(m => m.revenue), 1);
               return (
-                <div className="flex items-end gap-3 h-40">
+                <div className="flex items-end gap-2 sm:gap-3 min-w-[280px] h-40">
                   {stats.six_months_revenue.map((m, i) => {
                     const heightPct = Math.max((m.revenue / maxRev) * 100, 2);
                     const isCurrentMonth = i === stats.six_months_revenue.length - 1;
                     return (
-                      <div key={i} className="flex-1 flex flex-col items-center gap-1">
+                      <div key={i} className="flex-1 flex flex-col items-center gap-1 min-w-0">
                         <div className="w-full flex flex-col items-center justify-end" style={{ height: '140px' }}>
                           <div
                             className={`w-full max-w-12 rounded-t-md transition-all ${isCurrentMonth ? 'bg-blue-600' : 'bg-blue-300'}`}
@@ -367,10 +367,10 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
                             title={formatCurrency(m.revenue)}
                           />
                         </div>
-                        <span className={`text-xs font-medium ${isCurrentMonth ? 'text-blue-700 font-bold' : 'text-gray-500'}`}>
+                        <span className={`text-[10px] sm:text-xs font-medium truncate w-full text-center ${isCurrentMonth ? 'text-blue-700 font-bold' : 'text-gray-500'}`}>
                           {m.month}
                         </span>
-                        <span className="text-[10px] text-gray-400">{formatCurrency(m.revenue)}</span>
+                        <span className="text-[9px] sm:text-[10px] text-gray-500 whitespace-nowrap">{formatCurrency(m.revenue)}</span>
                       </div>
                     );
                   })}
@@ -394,7 +394,7 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
             </div>
           </div>
           <div className="p-5 space-y-5">
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1.5">Einheiten</label>
                 <input
@@ -403,6 +403,7 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
                   onChange={(e) => setUnits(e.target.value)}
                   className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 font-mono"
                   placeholder="10"
+                  aria-label="Anzahl der Einheiten"
                 />
               </div>
               <div>
@@ -413,11 +414,12 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
                   onChange={(e) => setRate(e.target.value)}
                   className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 font-mono"
                   placeholder="50"
+                  aria-label="Betrag pro Einheit in Euro"
                 />
               </div>
             </div>
 
-            <div className="bg-gradient-to-r from-blue-50 to-blue-100 rounded-lg p-4 border border-blue-200">
+            <div className="bg-gradient-to-r from-blue-50 to-blue-100 rounded-lg p-4 border border-blue-200" aria-live="polite">
               <div className="flex justify-between items-center">
                 <span className="text-blue-700 font-medium">Gesamtbetrag:</span>
                 <span className="text-3xl font-bold text-blue-900 font-mono">
@@ -435,8 +437,8 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
           </div>
         </div>
 
-        {/* Quick Actions */}
-        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm">
+        {/* Quick Actions — only visible on mobile */}
+        <div className="block md:hidden bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm">
           <div className="px-5 py-4 border-b border-gray-100 bg-gray-50">
             <div className="flex items-center justify-between">
               <div>

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useRef } from 'react';
 import { Appointment, Patient, Therapist } from '../types';
 import { ConfirmModal, Modal, showToast } from '../components/ui';
 import { apiFetch } from '../utils/api.js';
@@ -11,68 +11,27 @@ interface CalendarProps {
   onModalConsumed: () => void;
 }
 
-interface TherapistLane {
-  key: string;
-  label: string;
-  therapistId: string;
-  color: string;
-}
-
-type AppointmentsByTherapist = Map<string, Appointment[]>;
-
 const treatmentTypes = ['Physiotherapie', 'Massage', 'Training', 'Beratung', 'Folgekontrolle'];
 
-function getWeekStart(dateStr: string): Date {
-  const base = new Date(`${dateStr}T12:00:00`);
-  const day = base.getDay();
-  const offset = day === 0 ? -6 : 1 - day;
-  base.setDate(base.getDate() + offset);
-  return base;
-}
-
-function getWeekDays(dateStr: string): Date[] {
-  const start = getWeekStart(dateStr);
-  return Array.from({ length: 7 }, (_, index) => {
-    const date = new Date(start);
-    date.setDate(start.getDate() + index);
-    return date;
-  });
-}
-
-function getMonthGrid(dateStr: string): Array<{ date: Date; currentMonth: boolean }> {
-  const [year, month] = dateStr.slice(0, 7).split('-').map(Number);
-  const firstDay = new Date(year, month - 1, 1);
-  const startOffset = firstDay.getDay() === 0 ? 6 : firstDay.getDay() - 1;
-  const gridStart = new Date(firstDay);
-  gridStart.setDate(firstDay.getDate() - startOffset);
-
-  return Array.from({ length: 42 }, (_, index) => {
-    const date = new Date(gridStart);
-    date.setDate(gridStart.getDate() + index);
-    return { date, currentMonth: date.getMonth() === month - 1 };
-  });
-}
+const HOUR_HEIGHT = 60; // px per hour
+const START_HOUR = 7;
+const END_HOUR = 20;
 
 function formatViewLabel(viewMode: ViewMode, selectedDate: string): string {
   const date = new Date(`${selectedDate}T12:00:00`);
-
   if (viewMode === 'month') {
     return date.toLocaleDateString('de-AT', { month: 'long', year: 'numeric' });
   }
-
   if (viewMode === 'week') {
-    const weekDays = getWeekDays(selectedDate);
-    const start = weekDays[0];
-    const end = weekDays[6];
+    const start = new Date(`${selectedDate}T12:00:00`);
+    const day = start.getDay();
+    const offset = day === 0 ? -6 : 1 - day;
+    start.setDate(start.getDate() + offset);
+    const end = new Date(start);
+    end.setDate(start.getDate() + 6);
     return `${start.toLocaleDateString('de-AT', { day: '2-digit', month: 'short' })} – ${end.toLocaleDateString('de-AT', { day: '2-digit', month: 'short', year: 'numeric' })}`;
   }
-
-  return date.toLocaleDateString('de-AT', {
-    weekday: 'long',
-    day: '2-digit',
-    month: 'long',
-    year: 'numeric',
-  });
+  return date.toLocaleDateString('de-AT', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' });
 }
 
 function timeToMinutes(time: string) {
@@ -87,12 +46,90 @@ function minutesToTime(minutes: number) {
   return `${String(hours).padStart(2, '0')}:${String(mins).padStart(2, '0')}`;
 }
 
-function buildTimeSlots(startMinutes: number, endMinutes: number) {
-  const slots: string[] = [];
-  for (let minute = startMinutes; minute < endMinutes; minute += 30) {
-    slots.push(minutesToTime(minute));
+function getWeekDays(dateStr: string): Date[] {
+  const base = new Date(`${dateStr}T12:00:00`);
+  const day = base.getDay();
+  const offset = day === 0 ? -6 : 1 - day;
+  const start = new Date(base);
+  start.setDate(base.getDate() + offset);
+  return Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(start);
+    d.setDate(start.getDate() + i);
+    return d;
+  });
+}
+
+function getMonthGrid(dateStr: string): Array<{ date: Date; currentMonth: boolean }> {
+  const [year, month] = dateStr.slice(0, 7).split('-').map(Number);
+  const firstDay = new Date(year, month - 1, 1);
+  const startOffset = firstDay.getDay() === 0 ? 6 : firstDay.getDay() - 1;
+  const gridStart = new Date(firstDay);
+  gridStart.setDate(firstDay.getDate() - startOffset);
+  return Array.from({ length: 42 }, (_, i) => {
+    const date = new Date(gridStart);
+    date.setDate(gridStart.getDate() + i);
+    return { date, currentMonth: date.getMonth() === month - 1 };
+  });
+}
+
+function getEventStyle(timeStart: string, timeEnd: string, column: number, totalColumns: number) {
+  const startMin = timeToMinutes(timeStart);
+  const endMin = timeToMinutes(timeEnd);
+  const top = (startMin - START_HOUR * 60) * (HOUR_HEIGHT / 60);
+  const height = Math.max((endMin - startMin) * (HOUR_HEIGHT / 60), 20);
+  const widthPct = totalColumns > 1 ? `${((1 / totalColumns) * 100).toFixed(2)}%` : '100%';
+  const leftPct = totalColumns > 1 ? `${((column / totalColumns) * 100).toFixed(2)}%` : '0%';
+  return { top, height, width: widthPct, left: leftPct };
+}
+
+// Layout overlapping events into columns
+function layoutEvents(appointments: Appointment[]): Array<Appointment & { _col: number; _cols: number }> {
+  if (appointments.length === 0) return [];
+
+  const sorted = [...appointments].sort((a, b) => {
+    const startDiff = timeToMinutes(a.time_start) - timeToMinutes(b.time_start);
+    return startDiff !== 0 ? startDiff : timeToMinutes(a.time_end) - timeToMinutes(b.time_end);
+  });
+
+  const columns: Array<typeof sorted> = [];
+  const result: Array<Appointment & { _col: number; _cols: number }> = [];
+
+  for (const apt of sorted) {
+    const aptStart = timeToMinutes(apt.time_start);
+    let placed = false;
+    for (let c = 0; c < columns.length; c++) {
+      const lastInCol = columns[c][columns[c].length - 1];
+      if (timeToMinutes(lastInCol.time_end) <= aptStart) {
+        columns[c].push(apt);
+        placed = true;
+        break;
+      }
+    }
+    if (!placed) {
+      columns.push([apt]);
+    }
   }
-  return slots;
+
+  // Assign column indices and compute total overlapping columns per event
+  for (let c = 0; c < columns.length; c++) {
+    for (const apt of columns[c]) {
+      // Find max overlapping columns for this event's time span
+      const aptStart = timeToMinutes(apt.time_start);
+      const aptEnd = timeToMinutes(apt.time_end);
+
+      // Simple: total columns = number of columns that have at least one event overlapping
+      let overlappingCols = 0;
+      for (let oc = 0; oc < columns.length; oc++) {
+        const overlaps = columns[oc].some(other =>
+          timeToMinutes(other.time_start) < aptEnd && timeToMinutes(other.time_end) > aptStart
+        );
+        if (overlaps) overlappingCols++;
+      }
+      result.push({ ...apt, _col: c, _cols: overlappingCols });
+    }
+  }
+
+  return result;
 }
 
 export default function Calendar({ initialModal, onModalConsumed }: CalendarProps) {
@@ -111,6 +148,7 @@ export default function Calendar({ initialModal, onModalConsumed }: CalendarProp
   const [showModal, setShowModal] = useState(false);
   const [editingAppointment, setEditingAppointment] = useState<Appointment | null>(null);
   const [confirmAction, setConfirmAction] = useState<{ message: string; onConfirm: () => void } | null>(null);
+  const dayScrollRef = useRef<HTMLDivElement>(null);
   const [formData, setFormData] = useState({
     patient_id: '',
     therapist_id: '',
@@ -122,298 +160,104 @@ export default function Calendar({ initialModal, onModalConsumed }: CalendarProp
     sms_reminder: 0 as 0 | 1 | 2 | 3,
   });
 
+  // Auto-scroll to current time on mount / date change
   useEffect(() => {
-    void Promise.all([fetchPatients(), fetchTherapists()]);
-  }, []);
+    if (dayScrollRef.current && viewMode === 'day') {
+      const now = new Date();
+      const currentMin = now.getHours() * 60 + now.getMinutes();
+      const scrollTo = Math.max(0, (currentMin - START_HOUR * 60) * (HOUR_HEIGHT / 60) - 100);
+      dayScrollRef.current.scrollTop = scrollTo;
+    }
+  }, [viewMode, selectedDate]);
 
+  // Mobile: force day view
   useEffect(() => {
-    const canOpenAppointmentModal = !patientsLoading && !therapistsLoading && !patientsError && !therapistsError && patients.length > 0;
-
-    if (initialModal !== 'appointment') {
-      return;
-    }
-
-    if (patientsLoading || therapistsLoading) {
-      setPendingInitialAppointmentModal(true);
-      onModalConsumed();
-      return;
-    }
-
-    if (canOpenAppointmentModal) {
-      openCreateModal(selectedDate);
-      onModalConsumed();
-      return;
-    }
-
-    setPendingInitialAppointmentModal(false);
-    if (patientsError || therapistsError) {
-      showToast('Termin kann erst geöffnet werden, wenn Patient:innen und Therapeut:innen geladen sind.', 'error');
-    } else if (patients.length === 0) {
-      showToast('Bitte zuerst mindestens eine/n Patient:in anlegen.', 'warning');
-    }
-
-    onModalConsumed();
-  }, [
-    initialModal,
-    onModalConsumed,
-    patients.length,
-    patientsError,
-    patientsLoading,
-    selectedDate,
-    therapistsError,
-    therapistsLoading,
-  ]);
-
-  useEffect(() => {
-    const canOpenAppointmentModal = !patientsLoading && !therapistsLoading && !patientsError && !therapistsError && patients.length > 0;
-
-    if (!pendingInitialAppointmentModal || patientsLoading || therapistsLoading) {
-      return;
-    }
-
-    if (canOpenAppointmentModal) {
-      setPendingInitialAppointmentModal(false);
-      openCreateModal(selectedDate);
-      return;
-    }
-
-    setPendingInitialAppointmentModal(false);
-    if (patientsError || therapistsError) {
-      showToast('Termin kann erst geöffnet werden, wenn Patient:innen und Therapeut:innen geladen sind.', 'error');
-    } else if (patients.length === 0) {
-      showToast('Bitte zuerst mindestens eine/n Patient:in anlegen.', 'warning');
-    }
-  }, [
-    patients.length,
-    patientsError,
-    patientsLoading,
-    pendingInitialAppointmentModal,
-    selectedDate,
-    therapistsError,
-    therapistsLoading,
-  ]);
-
-  useEffect(() => {
-    const mediaQuery = window.matchMedia('(max-width: 767px)');
-    const applyViewportMode = (matches: boolean) => {
-      if (matches && viewMode !== 'day') {
-        setViewMode('day');
-      }
-    };
-
-    applyViewportMode(mediaQuery.matches);
-    const listener = (event: MediaQueryListEvent) => applyViewportMode(event.matches);
-    mediaQuery.addEventListener('change', listener);
-    return () => mediaQuery.removeEventListener('change', listener);
+    const mq = window.matchMedia('(max-width: 767px)');
+    if (mq.matches && viewMode !== 'day') setViewMode('day');
+    const listener = (e: MediaQueryListEvent) => { if (e.matches && viewMode !== 'day') setViewMode('day'); };
+    mq.addEventListener('change', listener);
+    return () => mq.removeEventListener('change', listener);
   }, [viewMode]);
 
+  useEffect(() => { void Promise.all([fetchPatients(), fetchTherapists()]); }, []);
+
   useEffect(() => {
-    void fetchAppointments();
-  }, [selectedDate, viewMode, selectedTherapistId]);
+    const canOpen = !patientsLoading && !therapistsLoading && !patientsError && !therapistsError && patients.length > 0;
+    if (initialModal !== 'appointment') return;
+    if (patientsLoading || therapistsLoading) { setPendingInitialAppointmentModal(true); onModalConsumed(); return; }
+    if (canOpen) { openCreateModal(selectedDate); onModalConsumed(); return; }
+    setPendingInitialAppointmentModal(false);
+    if (patientsError || therapistsError) showToast('Termin kann erst geöffnet werden, wenn Patient:innen und Therapeut:innen geladen sind.', 'error');
+    else if (patients.length === 0) showToast('Bitte zuerst mindestens eine/n Patient:in anlegen.', 'warning');
+    onModalConsumed();
+  }, [initialModal, onModalConsumed, patients.length, patientsError, patientsLoading, selectedDate, therapistsError, therapistsLoading]);
+
+  useEffect(() => {
+    if (!pendingInitialAppointmentModal || patientsLoading || therapistsLoading) return;
+    const canOpen = !patientsError && !therapistsError && patients.length > 0;
+    setPendingInitialAppointmentModal(false);
+    if (canOpen) { openCreateModal(selectedDate); return; }
+    if (patientsError || therapistsError) showToast('Termin kann erst geöffnet werden, wenn Patient:innen und Therapeut:innen geladen sind.', 'error');
+    else if (patients.length === 0) showToast('Bitte zuerst mindestens eine/n Patient:in anlegen.', 'warning');
+  }, [patients.length, patientsError, patientsLoading, pendingInitialAppointmentModal, selectedDate, therapistsError, therapistsLoading]);
+
+  useEffect(() => { void fetchAppointments(); }, [selectedDate, viewMode, selectedTherapistId]);
 
   async function fetchPatients() {
-    setPatientsLoading(true);
-    setPatientsError('');
+    setPatientsLoading(true); setPatientsError('');
     try {
       const res = await apiFetch('/api/patients', { credentials: 'include' });
       const data = await res.json();
-      if (data.success) {
-        setPatients(data.data);
-        return;
-      }
-
-      setPatients([]);
-      setPatientsError(data.error || 'Patient:innen konnten nicht geladen werden.');
-    } catch {
-      setPatients([]);
-      setPatientsError('Patient:innen konnten nicht geladen werden.');
-    } finally {
-      setPatientsLoading(false);
-    }
+      if (data.success) { setPatients(data.data); return; }
+      setPatients([]); setPatientsError(data.error || 'Patient:innen konnten nicht geladen werden.');
+    } catch { setPatients([]); setPatientsError('Patient:innen konnten nicht geladen werden.'); }
+    finally { setPatientsLoading(false); }
   }
 
   async function fetchTherapists() {
-    setTherapistsLoading(true);
-    setTherapistsError('');
+    setTherapistsLoading(true); setTherapistsError('');
     try {
       const res = await apiFetch('/api/therapists', { credentials: 'include' });
       const data = await res.json();
-      if (data.success) {
-        setTherapists(data.data);
-        setFormData((current) => ({
-          ...current,
-          therapist_id: current.therapist_id || (data.data[0]?.id ? String(data.data[0].id) : ''),
-        }));
-        return;
-      }
-
-      setTherapists([]);
-      setTherapistsError(data.error || 'Therapeut:innen konnten nicht geladen werden.');
-    } catch {
-      setTherapists([]);
-      setTherapistsError('Therapeut:innen konnten nicht geladen werden.');
-    } finally {
-      setTherapistsLoading(false);
-    }
+      if (data.success) { setTherapists(data.data); setFormData(c => ({ ...c, therapist_id: c.therapist_id || (data.data[0]?.id ? String(data.data[0].id) : '') })); return; }
+      setTherapists([]); setTherapistsError(data.error || 'Therapeut:innen konnten nicht geladen werden.');
+    } catch { setTherapists([]); setTherapistsError('Therapeut:innen konnten nicht geladen werden.'); }
+    finally { setTherapistsLoading(false); }
   }
 
   async function fetchAppointments() {
     setLoading(true);
     try {
       const params = new URLSearchParams({ date: selectedDate, view: viewMode });
-      if (selectedTherapistId !== 'all') {
-        params.set('therapist_id', selectedTherapistId);
-      }
-
+      if (selectedTherapistId !== 'all') params.set('therapist_id', selectedTherapistId);
       const res = await apiFetch(`/api/appointments?${params.toString()}`, { credentials: 'include' });
       const data = await res.json();
-      if (data.success) {
-        setAppointments(data.data);
-      } else {
-        showToast(data.error || 'Termine konnten nicht geladen werden', 'error');
-      }
-    } catch {
-      showToast('Termine konnten nicht geladen werden', 'error');
-    } finally {
-      setLoading(false);
-    }
+      if (data.success) setAppointments(data.data);
+      else showToast(data.error || 'Termine konnten nicht geladen werden', 'error');
+    } catch { showToast('Termine konnten nicht geladen werden', 'error'); }
+    finally { setLoading(false); }
   }
 
+  const today = getTodayStr();
+  const canCreate = !patientsLoading && !therapistsLoading && !patientsError && !therapistsError && patients.length > 0;
   const weekDays = useMemo(() => getWeekDays(selectedDate), [selectedDate]);
   const monthGrid = useMemo(() => getMonthGrid(selectedDate), [selectedDate]);
-  const today = getTodayStr();
-  const isAllTherapistsView = selectedTherapistId === 'all';
-  const canCreateAppointments = !patientsLoading && !therapistsLoading && !patientsError && !therapistsError && patients.length > 0;
-  const therapistLanes = useMemo<TherapistLane[]>(() => {
-    const lanes = therapists.map((therapist) => ({
-      key: `therapist-${therapist.id}`,
-      label: therapist.name,
-      therapistId: String(therapist.id),
-      color: therapist.color,
-    }));
 
-    const hasUnassignedAppointments = appointments.some((appointment) => !appointment.therapist_id);
-    if (hasUnassignedAppointments) {
-      lanes.push({
-        key: 'therapist-unassigned',
-        label: 'Nicht zugeordnet',
-        therapistId: '',
-        color: '#64748B',
-      });
-    }
-
-    return lanes;
-  }, [appointments, therapists]);
-  const timeRange = useMemo(() => {
-    const defaultStart = 7 * 60;
-    const defaultEnd = 20 * 60;
-
-    if (appointments.length === 0) {
-      return {
-        startMinutes: defaultStart,
-        endMinutes: defaultEnd,
-        hasEarlyAppointments: false,
-        hasLateAppointments: false,
-      };
-    }
-
-    const earliestStart = Math.min(...appointments.map((appointment) => timeToMinutes(appointment.time_start)));
-    const latestEnd = Math.max(...appointments.map((appointment) => timeToMinutes(appointment.time_end)));
-
-    return {
-      startMinutes: Math.min(defaultStart, Math.floor(earliestStart / 30) * 30),
-      endMinutes: Math.max(defaultEnd, Math.ceil(latestEnd / 30) * 30),
-      hasEarlyAppointments: earliestStart < defaultStart,
-      hasLateAppointments: latestEnd > defaultEnd,
-    };
-  }, [appointments]);
-  const timeSlots = useMemo(
-    () => buildTimeSlots(timeRange.startMinutes, timeRange.endMinutes),
-    [timeRange.endMinutes, timeRange.startMinutes],
-  );
-  const appointmentsByDateAndTherapist = useMemo(() => {
-    const lookup = new Map<string, AppointmentsByTherapist>();
-
-    for (const appointment of appointments) {
-      if (appointment.status === 'cancelled') {
-        continue;
-      }
-
-      const therapistKey = appointment.therapist_id ? String(appointment.therapist_id) : '';
-      const appointmentsByTherapist = lookup.get(appointment.date) ?? new Map<string, Appointment[]>();
-      const therapistAppointments = appointmentsByTherapist.get(therapistKey) ?? [];
-
-      therapistAppointments.push(appointment);
-      appointmentsByTherapist.set(therapistKey, therapistAppointments);
-      lookup.set(appointment.date, appointmentsByTherapist);
-    }
-
-    for (const appointmentsByTherapist of lookup.values()) {
-      for (const therapistAppointments of appointmentsByTherapist.values()) {
-        therapistAppointments.sort((left, right) => left.time_start.localeCompare(right.time_start));
-      }
-    }
-
-    return lookup;
-  }, [appointments]);
+  // Active appointments (non-cancelled)
+  const activeAppointments = useMemo(() => appointments.filter(a => a.status !== 'cancelled'), [appointments]);
 
   function getAppointmentsForDate(dateStr: string) {
-    const appointmentsByTherapist = appointmentsByDateAndTherapist.get(dateStr);
-    if (!appointmentsByTherapist) {
-      return [];
-    }
-
-    return Array.from(appointmentsByTherapist.values())
-      .flat()
-      .sort((left, right) => left.time_start.localeCompare(right.time_start));
+    return activeAppointments.filter(a => a.date === dateStr);
   }
 
-  function getAppointmentsForDateAndTherapist(dateStr: string, therapistId?: string) {
-    const appointmentsByTherapist = appointmentsByDateAndTherapist.get(dateStr);
-    if (!appointmentsByTherapist) {
-      return [];
-    }
-
-    if (therapistId === undefined) {
-      return getAppointmentsForDate(dateStr);
-    }
-
-    return appointmentsByTherapist.get(therapistId) ?? [];
-  }
-
-  function appointmentForSlot(dateStr: string, time: string, therapistId?: string) {
-    return getAppointmentsForDateAndTherapist(dateStr, therapistId).find(
-      (appointment) => appointment.time_start <= time && appointment.time_end > time,
-    );
-  }
-
-  function openCreateModal(date: string, timeStart = '09:00', therapistIdOverride?: string) {
-    if (patientsLoading || therapistsLoading) {
-      showToast('Stammdaten werden noch geladen. Bitte kurz warten.', 'warning');
-      return;
-    }
-
-    if (patientsError || therapistsError) {
-      showToast('Termin kann erst erstellt werden, wenn Patient:innen und Therapeut:innen geladen sind.', 'error');
-      return;
-    }
-
-    if (patients.length === 0) {
-      showToast('Bitte zuerst mindestens eine/n Patient:in anlegen.', 'warning');
-      return;
-    }
-
-    const therapistId = therapistIdOverride ?? (selectedTherapistId !== 'all' ? selectedTherapistId : therapists[0]?.id ? String(therapists[0].id) : '');
-    const [hour, minute] = timeStart.split(':').map(Number);
-    const endDate = new Date(2000, 0, 1, hour, minute + 50);
-
+  function openCreateModal(date?: string, time?: string, therapistId?: string) {
     setEditingAppointment(null);
     setFormData({
-      patient_id: patients[0]?.id ? String(patients[0].id) : '',
-      therapist_id: therapistId,
-      date,
-      time_start: timeStart,
-      time_end: `${String(endDate.getHours()).padStart(2, '0')}:${String(endDate.getMinutes()).padStart(2, '0')}`,
+      patient_id: '',
+      therapist_id: therapistId || (therapists[0]?.id ? String(therapists[0].id) : ''),
+      date: date || selectedDate,
+      time_start: time || '09:00',
+      time_end: time ? minutesToTime(timeToMinutes(time) + 50) : '09:50',
       treatment_type: treatmentTypes[0],
       notes: '',
       sms_reminder: 0,
@@ -436,136 +280,271 @@ export default function Calendar({ initialModal, onModalConsumed }: CalendarProp
     setShowModal(true);
   }
 
-  async function submitAppointment(event: React.FormEvent) {
-    event.preventDefault();
-
-    const url = editingAppointment ? `/api/appointments/${editingAppointment.id}` : '/api/appointments';
-    const method = editingAppointment ? 'PUT' : 'POST';
-    const payload = {
-      ...formData,
-      patient_id: Number(formData.patient_id),
-      therapist_id: formData.therapist_id ? Number(formData.therapist_id) : null,
-    };
-
+  async function submitAppointment(e: React.FormEvent) {
+    e.preventDefault();
     try {
-      const res = await apiFetch(url, {
-        method,
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
+      const body = { ...formData, patient_id: Number(formData.patient_id), therapist_id: formData.therapist_id ? Number(formData.therapist_id) : null };
+      const res = editingAppointment?.id
+        ? await apiFetch(`/api/appointments/${editingAppointment.id}`, { method: 'PUT', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+        : await apiFetch('/api/appointments', { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
       const data = await res.json();
-      if (!data.success) {
-        showToast(data.error || 'Termin konnte nicht gespeichert werden', 'error');
-        return;
-      }
-
+      if (!data.success) { showToast(data.error || 'Fehler beim Speichern', 'error'); return; }
       setShowModal(false);
       await fetchAppointments();
       showToast(editingAppointment ? 'Termin aktualisiert' : 'Termin erstellt', 'success');
-    } catch {
-      showToast('Termin konnte nicht gespeichert werden', 'error');
-    }
+    } catch { showToast('Termin konnte nicht gespeichert werden', 'error'); }
   }
 
   async function cancelAppointment(id: number) {
     try {
       const res = await apiFetch(`/api/appointments/${id}/cancel`, { method: 'POST', credentials: 'include' });
       const data = await res.json();
-      if (!data.success) {
-        showToast(data.error || 'Termin konnte nicht abgesagt werden', 'error');
-        return;
-      }
-
-      await fetchAppointments();
-      showToast('Termin abgesagt', 'success');
-    } catch {
-      showToast('Termin konnte nicht abgesagt werden', 'error');
-    }
+      if (!data.success) { showToast(data.error || 'Termin konnte nicht abgesagt werden', 'error'); return; }
+      await fetchAppointments(); showToast('Termin abgesagt', 'success');
+    } catch { showToast('Termin konnte nicht abgesagt werden', 'error'); }
   }
 
   async function deleteAppointment(id: number) {
     try {
       const res = await apiFetch(`/api/appointments/${id}`, { method: 'DELETE', credentials: 'include' });
       const data = await res.json();
-      if (!data.success) {
-        showToast(data.error || 'Termin konnte nicht gelöscht werden', 'error');
-        return;
-      }
-
-      setShowModal(false);
-      await fetchAppointments();
-      showToast('Termin gelöscht', 'success');
-    } catch {
-      showToast('Termin konnte nicht gelöscht werden', 'error');
-    }
+      if (!data.success) { showToast(data.error || 'Termin konnte nicht gelöscht werden', 'error'); return; }
+      setShowModal(false); await fetchAppointments(); showToast('Termin gelöscht', 'success');
+    } catch { showToast('Termin konnte nicht gelöscht werden', 'error'); }
   }
 
   function navigateDate(direction: number) {
-    if (viewMode === 'month') {
-      setSelectedDate(addMonths(selectedDate, direction));
-      return;
-    }
-    if (viewMode === 'week') {
-      setSelectedDate(addDays(selectedDate, direction * 7));
-      return;
-    }
+    if (viewMode === 'month') { setSelectedDate(addMonths(selectedDate, direction)); return; }
+    if (viewMode === 'week') { setSelectedDate(addDays(selectedDate, direction * 7)); return; }
     setSelectedDate(addDays(selectedDate, direction));
   }
 
-  function renderAppointmentCard(appointment: Appointment, compact = false) {
+  // ─── Time grid background (hour lines) ─────────────────────────
+  function renderHourGrid() {
+    const hours = [];
+    for (let h = START_HOUR; h <= END_HOUR; h++) {
+      hours.push(h);
+    }
+    return (
+      <>
+        {hours.map(h => (
+          <div key={h} className="absolute left-0 right-0 border-t border-slate-100" style={{ top: (h - START_HOUR) * HOUR_HEIGHT }}>
+            <span className="absolute -left-1 -translate-x-full pr-2 text-[11px] text-slate-400 font-mono -mt-2">
+              {String(h).padStart(2, '0')}:00
+            </span>
+          </div>
+        ))}
+      </>
+    );
+  }
+
+  // ─── Compact event card ────────────────────────────────────────
+  function renderEventCard(appointment: Appointment & { _col?: number; _cols?: number }, style: React.CSSProperties) {
     const color = appointment.therapist_color || '#2563EB';
-    const firstName = appointment.patient_name.split(' ')[0];
+    const firstName = appointment.patient_name?.split(' ')[0] || '?';
+    const isSmall = Number(style.height ?? 0) < 35;
 
     return (
       <button
+        key={appointment.id}
         type="button"
         onClick={() => openEditModal(appointment)}
-        className={`w-full rounded-xl border border-slate-200 bg-white p-2 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md ${compact ? 'min-h-[58px]' : 'min-h-[74px]'}`}
-        style={{ borderLeft: `4px solid ${color}` }}
+        className="absolute rounded-lg text-left overflow-hidden transition hover:shadow-md hover:z-10 focus:outline-none focus:ring-2 focus:ring-blue-400"
+        style={{
+          ...style,
+          borderLeft: `3px solid ${color}`,
+          backgroundColor: `${color}12`,
+          padding: isSmall ? '1px 6px' : '2px 6px',
+        }}
       >
-        <div className="flex items-start justify-between gap-2">
-          <div className="min-w-0">
-            <p className="truncate text-sm font-semibold text-slate-900">{firstName}</p>
-            <p className="truncate text-xs text-slate-500">{appointment.treatment_type}</p>
-          </div>
-          <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-600">
-            {appointment.time_start}
-          </span>
-        </div>
-        {!compact && (
-          <div className="mt-2 flex items-center gap-2 text-[11px] text-slate-500">
-            <span>{appointment.time_start}–{appointment.time_end}</span>
-            {appointment.therapist_name && <span>• {appointment.therapist_name}</span>}
-            {appointment.sms_reminder === 1 && <span>• SMS gesendet</span>}
-            {appointment.sms_reminder === 2 && <span>• SMS geplant</span>}
-            {appointment.sms_reminder === 3 && <span className="text-red-600">• SMS fehlgeschlagen</span>}
-          </div>
-        )}
+        <p className="truncate text-[11px] font-semibold text-slate-900 leading-tight">{firstName}</p>
+        {!isSmall && <p className="truncate text-[10px] text-slate-500 leading-tight">{appointment.time_start}–{appointment.time_end}</p>}
+        {!isSmall && appointment.treatment_type && <p className="truncate text-[10px] text-slate-400 leading-tight">{appointment.treatment_type}</p>}
       </button>
     );
   }
 
-  return (
-    <div className="space-y-6">
-      <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-        <div className="flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
-          <div>
-            <p className="text-sm font-medium uppercase tracking-wide text-slate-500">Kalender</p>
-            <h2 className="mt-1 text-2xl font-semibold text-slate-900">Behandlungen und Ressourcen</h2>
-            <p className="mt-2 text-sm text-slate-600">
-              {appointments.length} Termin{appointments.length === 1 ? '' : 'e'} in der aktuellen Ansicht
-            </p>
+  // ─── Current time indicator ───────────────────────────────────
+  function renderNowLine() {
+    const now = new Date();
+    const min = now.getHours() * 60 + now.getMinutes();
+    if (min < START_HOUR * 60 || min > END_HOUR * 60) return null;
+    const top = (min - START_HOUR * 60) * (HOUR_HEIGHT / 60);
+    return <div className="absolute left-0 right-0 z-20 h-[2px] bg-red-500" style={{ top }}><div className="absolute -left-1 -top-[3px] w-2 h-2 rounded-full bg-red-500" /></div>;
+  }
+
+  // ─── Day View ──────────────────────────────────────────────────
+  function renderDayView() {
+    const dayApts = getAppointmentsForDate(selectedDate);
+    const laid = layoutEvents(dayApts);
+    const totalHeight = (END_HOUR - START_HOUR + 1) * HOUR_HEIGHT;
+
+    return (
+      <div ref={dayScrollRef} className="overflow-y-auto rounded-2xl border border-slate-200 bg-white shadow-sm" style={{ maxHeight: '75vh' }}>
+        <div className="relative ml-14" style={{ height: totalHeight }}>
+          {renderHourGrid()}
+          {renderNowLine()}
+          {laid.map(apt => {
+            const style = getEventStyle(apt.time_start, apt.time_end, apt._col, apt._cols);
+            return renderEventCard(apt, style);
+          })}
+          {/* Click-to-create on empty space */}
+          <div
+            className="absolute inset-0 z-0"
+            onClick={(e) => {
+              if (e.target === e.currentTarget) {
+                const rect = e.currentTarget.getBoundingClientRect();
+                const y = e.clientY - rect.top + (dayScrollRef.current?.scrollTop ?? 0);
+                const min = Math.round((y / (HOUR_HEIGHT / 60)) + START_HOUR * 60);
+                const snapped = Math.floor(min / 15) * 15;
+                openCreateModal(selectedDate, minutesToTime(Math.max(START_HOUR * 60, Math.min(END_HOUR * 60 - 50, snapped))));
+              }
+            }}
+          />
+        </div>
+      </div>
+    );
+  }
+
+  // ─── Week View ──────────────────────────────────────────────────
+  function renderWeekView() {
+    const totalHeight = (END_HOUR - START_HOUR + 1) * HOUR_HEIGHT;
+
+    return (
+      <div className="overflow-auto rounded-2xl border border-slate-200 bg-white shadow-sm" style={{ maxHeight: '75vh' }}>
+        <div className="md:min-w-[900px]">
+          {/* Day headers */}
+          <div className="sticky top-0 z-30 grid grid-cols-[56px_repeat(7,1fr)] border-b border-slate-200 bg-white">
+            <div className="px-2 py-3" />
+            {weekDays.map(day => {
+              const ds = toLocalDateStr(day);
+              const isToday = ds === today;
+              const dayApts = getAppointmentsForDate(ds);
+              return (
+                <div key={ds} className={`px-2 py-2 text-center border-l border-slate-100 ${isToday ? 'bg-blue-50' : ''}`}>
+                  <p className="text-[11px] uppercase tracking-wide text-slate-400">{day.toLocaleDateString('de-AT', { weekday: 'short' })}</p>
+                  <p className={`text-lg font-semibold ${isToday ? 'text-blue-700' : 'text-slate-900'}`}>{day.getDate()}</p>
+                  {dayApts.length > 0 && <p className="text-[10px] text-slate-400">{dayApts.length} Termin{dayApts.length > 1 ? 'e' : ''}</p>}
+                </div>
+              );
+            })}
           </div>
 
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
-            <div className="flex gap-1 rounded-xl bg-slate-100 p-1">
-              {(['day', 'week', 'month'] as ViewMode[]).map((mode) => (
+          {/* Time grid + events */}
+          <div className="grid grid-cols-[56px_repeat(7,1fr)]">
+            {/* Time column */}
+            <div className="relative" style={{ height: totalHeight }}>
+              {Array.from({ length: END_HOUR - START_HOUR + 1 }, (_, i) => i + START_HOUR).map(h => (
+                <div key={h} className="absolute left-0 right-0 -mt-2 pr-2 text-right text-[11px] text-slate-400 font-mono" style={{ top: (h - START_HOUR) * HOUR_HEIGHT }}>
+                  {String(h).padStart(2, '0')}:00
+                </div>
+              ))}
+            </div>
+
+            {/* Day columns */}
+            {weekDays.map(day => {
+              const ds = toLocalDateStr(day);
+              const isToday = ds === today;
+              const dayApts = layoutEvents(getAppointmentsForDate(ds));
+              return (
+                <div key={ds} className={`relative border-l border-slate-100 ${isToday ? 'bg-blue-50/30' : ''}`} style={{ height: totalHeight }}>
+                  {/* Hour lines */}
+                  {Array.from({ length: END_HOUR - START_HOUR + 1 }, (_, i) => i + START_HOUR).map(h => (
+                    <div key={h} className="absolute left-0 right-0 border-t border-slate-100" style={{ top: (h - START_HOUR) * HOUR_HEIGHT }} />
+                  ))}
+                  {/* Events */}
+                  {dayApts.map(apt => {
+                    const style = getEventStyle(apt.time_start, apt.time_end, apt._col, apt._cols);
+                    return renderEventCard(apt, style);
+                  })}
+                  {ds === today && renderNowLine()}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ─── Month View ──────────────────────────────────────────────────
+  function renderMonthView() {
+    return (
+      <div className="overflow-auto rounded-2xl border border-slate-200 bg-white shadow-sm">
+        <div className="md:min-w-[900px]">
+          {/* Weekday headers */}
+          <div className="grid grid-cols-7 border-b border-slate-200 bg-slate-50">
+            {['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'].map(d => (
+              <div key={d} className="px-3 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500">{d}</div>
+            ))}
+          </div>
+
+          <div className="grid grid-cols-7">
+            {monthGrid.map(({ date, currentMonth }) => {
+              const ds = toLocalDateStr(date);
+              const dayApts = getAppointmentsForDate(ds);
+              const isToday = ds === today;
+
+              return (
+                <div key={ds} className={`min-h-[120px] border-b border-r border-slate-100 p-2 ${currentMonth ? 'bg-white' : 'bg-slate-50/60'} ${isToday ? 'bg-blue-50/40' : ''}`}>
+                  <div className="flex items-center justify-between mb-1">
+                    <button
+                      onClick={() => { setSelectedDate(ds); setViewMode('day'); }}
+                      className={`flex h-7 w-7 items-center justify-center rounded-full text-xs font-semibold ${
+                        isToday ? 'bg-blue-600 text-white' : currentMonth ? 'text-slate-800 hover:bg-slate-100' : 'text-slate-400'
+                      }`}
+                    >
+                      {date.getDate()}
+                    </button>
+                    <button onClick={() => openCreateModal(ds)} className="rounded p-1 text-[10px] text-slate-300 hover:text-blue-600 hover:bg-blue-50" aria-label="Termin erstellen">+</button>
+                  </div>
+                  <div className="space-y-[2px]">
+                    {dayApts.slice(0, 5).map(apt => {
+                      const color = apt.therapist_color || '#2563EB';
+                      return (
+                        <button
+                          key={apt.id}
+                          onClick={() => openEditModal(apt)}
+                          className="w-full text-left rounded px-1.5 py-[1px] text-[10px] truncate hover:bg-slate-100 transition"
+                          style={{ borderLeft: `2px solid ${color}` }}
+                        >
+                          <span className="font-medium text-slate-800">{apt.time_start}</span> <span className="text-slate-500">{apt.patient_name?.split(' ')[0]}</span>
+                        </button>
+                      );
+                    })}
+                    {dayApts.length > 5 && (
+                      <button onClick={() => { setSelectedDate(ds); setViewMode('day'); }} className="text-[10px] text-blue-600 hover:underline px-1">
+                        +{dayApts.length - 5} weitere
+                      </button>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* Header */}
+      <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <h2 className="text-lg font-semibold text-slate-900">Behandlungen</h2>
+            <p className="text-sm text-slate-500">{activeAppointments.length} Termin{activeAppointments.length === 1 ? '' : 'e'} in der aktuellen Ansicht</p>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="flex gap-0.5 rounded-lg bg-slate-100 p-0.5">
+              {(['day', 'week', 'month'] as ViewMode[]).map(mode => (
                 <button
                   key={mode}
                   onClick={() => setViewMode(mode)}
-                  className={`rounded-lg px-4 py-2 text-sm font-medium transition ${
-                    viewMode === mode ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-600 hover:text-slate-900'
+                  className={`rounded-md px-3 py-1.5 text-xs font-medium transition min-h-[36px] ${
+                    viewMode === mode ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-500 hover:text-slate-800'
                   } ${mode !== 'day' ? 'hidden md:block' : ''}`}
                 >
                   {mode === 'day' ? 'Tag' : mode === 'week' ? 'Woche' : 'Monat'}
@@ -575,449 +554,92 @@ export default function Calendar({ initialModal, onModalConsumed }: CalendarProp
 
             <select
               value={selectedTherapistId}
-              onChange={(event) => setSelectedTherapistId(event.target.value)}
-              className="rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
+              onChange={e => setSelectedTherapistId(e.target.value)}
+              className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs focus:border-blue-400 focus:outline-none focus:ring-1 focus:ring-blue-200"
             >
               <option value="all">Alle Therapeut:innen</option>
-              {therapists.map((therapist) => (
-                <option key={therapist.id} value={therapist.id}>
-                  {therapist.name}
-                </option>
-              ))}
+              {therapists.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
             </select>
 
-            <button
-              onClick={() => window.open('/api/appointments/ical', '_blank')}
-              className="rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-2.5 text-sm font-medium text-emerald-800 hover:bg-emerald-100"
-            >
-              iCal exportieren
+            <button onClick={() => window.open('/api/appointments/ical', '_blank')} className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-medium text-emerald-800 hover:bg-emerald-100">
+              iCal
             </button>
 
-            <button
-              onClick={() => openCreateModal(selectedDate)}
-              disabled={!canCreateAppointments}
-              className="rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-slate-300"
-            >
-              + Neuer Termin
+            <button onClick={() => openCreateModal(selectedDate)} disabled={!canCreate} className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700 disabled:bg-slate-300 disabled:cursor-not-allowed">
+              + Termin
             </button>
           </div>
         </div>
       </div>
 
-      <div className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm md:flex-row md:items-center md:justify-between">
-        <div className="flex items-center gap-2">
-          <button onClick={() => navigateDate(-1)} className="rounded-xl border border-slate-200 px-3 py-2 text-slate-600 hover:bg-slate-50">
-            ←
-          </button>
-          <button onClick={() => setSelectedDate(today)} className="rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
-            Heute
-          </button>
-          <button onClick={() => navigateDate(1)} className="rounded-xl border border-slate-200 px-3 py-2 text-slate-600 hover:bg-slate-50">
-            →
-          </button>
+      {/* Navigation */}
+      <div className="flex items-center justify-between rounded-xl border border-slate-200 bg-white px-4 py-2 shadow-sm">
+        <div className="flex items-center gap-1">
+          <button onClick={() => navigateDate(-1)} className="rounded-lg px-2 py-1 text-slate-500 hover:bg-slate-100" aria-label="Zurück">←</button>
+          <button onClick={() => setSelectedDate(today)} className="rounded-lg px-3 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100">Heute</button>
+          <button onClick={() => navigateDate(1)} className="rounded-lg px-2 py-1 text-slate-500 hover:bg-slate-100" aria-label="Weiter">→</button>
         </div>
-        <p className="text-lg font-semibold text-slate-900">{formatViewLabel(viewMode, selectedDate)}</p>
+        <p className="text-sm font-semibold text-slate-900">{formatViewLabel(viewMode, selectedDate)}</p>
       </div>
 
-      {!loading && appointments.length === 0 ? (
-        <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-4 py-3 text-sm text-slate-600">
-          Keine Termine in diesem Zeitraum. Mit den Pfeilen wechseln Sie zum vorherigen oder nächsten Zeitraum, oder Sie legen direkt einen neuen Termin an.
-        </div>
-      ) : null}
-
-      {!loading && viewMode !== 'month' && (timeRange.hasEarlyAppointments || timeRange.hasLateAppointments) ? (
-        <div className="flex flex-wrap gap-3 rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900">
-          {timeRange.hasEarlyAppointments ? <span>Frühe Termine sichtbar ab {minutesToTime(timeRange.startMinutes)}.</span> : null}
-          {timeRange.hasLateAppointments ? <span>Späte Termine sichtbar bis {minutesToTime(timeRange.endMinutes)}.</span> : null}
-        </div>
-      ) : null}
-
+      {/* Content */}
       {loading ? (
-        <div className="flex min-h-[45vh] items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-500 shadow-sm">
-          Kalender wird geladen…
+        <div className="flex min-h-[40vh] items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-400 shadow-sm">Kalender wird geladen…</div>
+      ) : activeAppointments.length === 0 ? (
+        <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 px-4 py-8 text-center text-sm text-slate-500">
+          <span className="text-3xl block mb-2">📅</span>
+          Keine Termine in diesem Zeitraum.
+          <button onClick={() => openCreateModal(selectedDate)} className="ml-2 text-blue-600 hover:underline font-medium">Jetzt anlegen</button>
         </div>
-      ) : null}
+      ) : viewMode === 'day' ? renderDayView() : viewMode === 'week' ? renderWeekView() : renderMonthView()}
 
-      {!loading && viewMode === 'day' && (
-        <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-          {isAllTherapistsView ? (
-            <div
-              className="grid border-b border-slate-200 bg-slate-50"
-              style={{ gridTemplateColumns: `88px repeat(${Math.max(therapistLanes.length, 1)}, minmax(0, 1fr))` }}
-            >
-              <span className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Zeit</span>
-              {therapistLanes.map((lane) => (
-                <span
-                  key={lane.key}
-                  className="border-l border-slate-200 px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500"
-                >
-                  {lane.label}
-                </span>
-              ))}
-            </div>
-          ) : (
-            <div className="grid grid-cols-[88px_1fr] border-b border-slate-200 bg-slate-50 px-4 py-3">
-              <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Zeit</span>
-              <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Terminplan</span>
-            </div>
-          )}
-          <div className="divide-y divide-slate-100">
-            {timeSlots.map((time) => {
-              if (isAllTherapistsView) {
-                return (
-                  <div
-                    key={time}
-                    className="grid"
-                    style={{ gridTemplateColumns: `88px repeat(${Math.max(therapistLanes.length, 1)}, minmax(0, 1fr))` }}
-                  >
-                    <div className="border-r border-slate-100 bg-slate-50 px-4 py-3 text-right font-mono text-sm text-slate-500">{time}</div>
-                    {therapistLanes.map((lane) => {
-                      const appointment = appointmentForSlot(selectedDate, time, lane.therapistId);
-                      const isStart = appointment?.time_start === time;
-
-                      return (
-                        <div key={`${time}-${lane.key}`} className="min-h-[76px] border-l border-slate-100 p-2">
-                          {appointment && isStart ? (
-                            <div className="space-y-2">
-                              {renderAppointmentCard(appointment)}
-                              <div className="flex gap-2">
-                                <button onClick={() => openEditModal(appointment)} className="rounded-lg bg-slate-100 px-3 py-2 text-sm text-slate-600 hover:bg-slate-200">
-                                  Bearbeiten
-                                </button>
-                                <button
-                                  onClick={() => setConfirmAction({ message: 'Termin wirklich absagen?', onConfirm: () => void cancelAppointment(appointment.id!) })}
-                                  className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700 hover:bg-red-100"
-                                >
-                                  Absagen
-                                </button>
-                              </div>
-                            </div>
-                          ) : !appointment ? (
-                            <button
-                              onClick={() => openCreateModal(selectedDate, time, lane.therapistId)}
-                              className="flex h-full min-h-[60px] w-full items-center justify-center rounded-xl border border-dashed border-slate-300 text-sm font-medium text-slate-500 transition hover:border-blue-400 hover:bg-blue-50 hover:text-blue-700"
-                            >
-                              + Termin um {time}
-                            </button>
-                          ) : null}
-                        </div>
-                      );
-                    })}
-                  </div>
-                );
-              }
-
-              const appointment = appointmentForSlot(selectedDate, time);
-              const isStart = appointment?.time_start === time;
-              return (
-                <div key={time} className="grid grid-cols-[88px_1fr]">
-                  <div className="border-r border-slate-100 bg-slate-50 px-4 py-3 text-right font-mono text-sm text-slate-500">{time}</div>
-                  <div className="min-h-[76px] p-2">
-                    {appointment && isStart ? (
-                      <div className="flex items-start gap-2">
-                        <div className="flex-1">{renderAppointmentCard(appointment)}</div>
-                        <button onClick={() => openEditModal(appointment)} className="rounded-lg bg-slate-100 px-3 py-2 text-sm text-slate-600 hover:bg-slate-200">
-                          Bearbeiten
-                        </button>
-                        <button
-                          onClick={() => setConfirmAction({ message: 'Termin wirklich absagen?', onConfirm: () => void cancelAppointment(appointment.id!) })}
-                          className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700 hover:bg-red-100"
-                        >
-                          Absagen
-                        </button>
-                      </div>
-                    ) : !appointment ? (
-                      <button
-                        onClick={() => openCreateModal(selectedDate, time)}
-                        className="flex h-full min-h-[60px] w-full items-center justify-center rounded-xl border border-dashed border-slate-300 text-sm font-medium text-slate-500 transition hover:border-blue-400 hover:bg-blue-50 hover:text-blue-700"
-                      >
-                        + Termin um {time}
-                      </button>
-                    ) : null}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      {!loading && viewMode === 'week' && (
-        <div className="overflow-auto rounded-2xl border border-slate-200 bg-white shadow-sm">
-          <div className="min-w-[1100px]">
-            {isAllTherapistsView ? (
-              <>
-                <div
-                  className="grid border-b border-slate-200 bg-slate-50"
-                  style={{ gridTemplateColumns: `88px repeat(${weekDays.length * Math.max(therapistLanes.length, 1)}, minmax(0, 1fr))` }}
-                >
-                  <div className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Zeit</div>
-                  {weekDays.map((day) => {
-                    const dateStr = toLocalDateStr(day);
-                    const isToday = dateStr === today;
-                    return (
-                      <div
-                        key={dateStr}
-                        className={`border-l border-slate-200 px-4 py-3 ${isToday ? 'bg-blue-50' : ''}`}
-                        style={{ gridColumn: `span ${Math.max(therapistLanes.length, 1)} / span ${Math.max(therapistLanes.length, 1)}` }}
-                      >
-                        <p className="text-sm font-semibold text-slate-900">{day.toLocaleDateString('de-AT', { weekday: 'long' })}</p>
-                        <p className={`text-sm ${isToday ? 'font-semibold text-blue-700' : 'text-slate-500'}`}>
-                          {day.toLocaleDateString('de-AT', { day: '2-digit', month: '2-digit' })}
-                        </p>
-                      </div>
-                    );
-                  })}
-                </div>
-                <div
-                  className="grid border-b border-slate-200 bg-slate-50/80"
-                  style={{ gridTemplateColumns: `88px repeat(${weekDays.length * Math.max(therapistLanes.length, 1)}, minmax(0, 1fr))` }}
-                >
-                  <div />
-                  {weekDays.flatMap((day) => {
-                    const dateStr = toLocalDateStr(day);
-                    return therapistLanes.map((lane) => (
-                      <div key={`${dateStr}-${lane.key}`} className="border-l border-slate-200 px-2 py-2 text-center text-xs font-semibold uppercase tracking-wide text-slate-500">
-                        {lane.label}
-                      </div>
-                    ));
-                  })}
-                </div>
-              </>
-            ) : (
-              <div className="grid grid-cols-[88px_repeat(7,minmax(0,1fr))] border-b border-slate-200 bg-slate-50">
-                <div className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Zeit</div>
-                {weekDays.map((day) => {
-                  const dateStr = toLocalDateStr(day);
-                  const isToday = dateStr === today;
-                  return (
-                    <div key={dateStr} className={`border-l border-slate-200 px-4 py-3 ${isToday ? 'bg-blue-50' : ''}`}>
-                      <p className="text-sm font-semibold text-slate-900">{day.toLocaleDateString('de-AT', { weekday: 'long' })}</p>
-                      <p className={`text-sm ${isToday ? 'font-semibold text-blue-700' : 'text-slate-500'}`}>
-                        {day.toLocaleDateString('de-AT', { day: '2-digit', month: '2-digit' })}
-                      </p>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-
-            <div className="divide-y divide-slate-100">
-              {timeSlots.map((time) => {
-                if (isAllTherapistsView) {
-                  return (
-                    <div
-                      key={time}
-                      className="grid"
-                      style={{ gridTemplateColumns: `88px repeat(${weekDays.length * Math.max(therapistLanes.length, 1)}, minmax(0, 1fr))` }}
-                    >
-                      <div className="bg-slate-50 px-4 py-3 text-right font-mono text-sm text-slate-500">{time}</div>
-                      {weekDays.flatMap((day) => {
-                        const dateStr = toLocalDateStr(day);
-                        return therapistLanes.map((lane) => {
-                          const appointment = appointmentForSlot(dateStr, time, lane.therapistId);
-                          const isStart = appointment?.time_start === time;
-
-                          return (
-                            <div key={`${dateStr}-${time}-${lane.key}`} className="min-h-[78px] border-l border-slate-100 p-2">
-                              {appointment && isStart ? (
-                                renderAppointmentCard(appointment, true)
-                              ) : !appointment ? (
-                                <button
-                                  onClick={() => openCreateModal(dateStr, time, lane.therapistId)}
-                                  className="flex h-full min-h-[60px] w-full items-center justify-center rounded-xl border border-dashed border-transparent text-slate-300 transition hover:border-blue-300 hover:bg-blue-50 hover:text-blue-600"
-                                >
-                                  +
-                                </button>
-                              ) : null}
-                            </div>
-                          );
-                        });
-                      })}
-                    </div>
-                  );
-                }
-
-                return (
-                  <div key={time} className="grid grid-cols-[88px_repeat(7,minmax(0,1fr))]">
-                    <div className="bg-slate-50 px-4 py-3 text-right font-mono text-sm text-slate-500">{time}</div>
-                    {weekDays.map((day) => {
-                      const dateStr = toLocalDateStr(day);
-                      const appointment = appointmentForSlot(dateStr, time);
-                      const isStart = appointment?.time_start === time;
-                      return (
-                        <div key={`${dateStr}-${time}`} className="min-h-[78px] border-l border-slate-100 p-2">
-                          {appointment && isStart ? (
-                            renderAppointmentCard(appointment, true)
-                          ) : !appointment ? (
-                            <button
-                              onClick={() => openCreateModal(dateStr, time)}
-                              className="flex h-full min-h-[60px] w-full items-center justify-center rounded-xl border border-dashed border-transparent text-slate-300 transition hover:border-blue-300 hover:bg-blue-50 hover:text-blue-600"
-                            >
-                              +
-                            </button>
-                          ) : null}
-                        </div>
-                      );
-                    })}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {!loading && viewMode === 'month' && (
-        <div className="overflow-auto rounded-2xl border border-slate-200 bg-white shadow-sm">
-          <div className="min-w-[1100px]">
-            <div className="grid grid-cols-7 border-b border-slate-200 bg-slate-50">
-              {['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'].map((label) => (
-                <div key={label} className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  {label}
-                </div>
-              ))}
-            </div>
-
-            <div className="grid grid-cols-7">
-              {monthGrid.map(({ date, currentMonth }) => {
-                const dateStr = toLocalDateStr(date);
-                const dayAppointments = getAppointmentsForDate(dateStr);
-                const isToday = dateStr === today;
-
-                return (
-                  <div key={dateStr} className={`min-h-[150px] border-b border-r border-slate-100 p-3 ${currentMonth ? 'bg-white' : 'bg-slate-50/80'}`}>
-                    <div className="mb-2 flex items-center justify-between">
-                      <button
-                        onClick={() => openCreateModal(dateStr)}
-                        className={`flex h-8 w-8 items-center justify-center rounded-full text-sm font-semibold ${
-                          isToday ? 'bg-blue-600 text-white' : currentMonth ? 'text-slate-700 hover:bg-slate-100' : 'text-slate-400'
-                        }`}
-                      >
-                        {date.getDate()}
-                      </button>
-                      <button onClick={() => openCreateModal(dateStr)} className="rounded-lg px-2 py-1 text-xs font-medium text-slate-400 hover:bg-slate-100 hover:text-blue-600">
-                        +
-                      </button>
-                    </div>
-
-                    <div className="space-y-2">
-                      {dayAppointments.slice(0, 3).map((appointment) => (
-                        <div key={appointment.id}>
-                          {renderAppointmentCard(appointment, true)}
-                        </div>
-                      ))}
-                      {dayAppointments.length > 3 && (
-                        <p className="px-2 text-xs font-medium text-slate-500">+ {dayAppointments.length - 3} weitere Termine</p>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        </div>
-      )}
-
+      {/* Appointment Modal */}
       <Modal isOpen={showModal} onClose={() => setShowModal(false)} title={editingAppointment ? 'Termin bearbeiten' : 'Termin anlegen'} size="lg">
         <form onSubmit={submitAppointment} className="space-y-5 p-6">
           <div className="grid gap-4 md:grid-cols-2">
             <div>
               <label className="mb-1 block text-sm font-medium text-slate-700">Patient/in</label>
-              <select
-                required
-                value={formData.patient_id}
-                onChange={(event) => setFormData((current) => ({ ...current, patient_id: event.target.value }))}
-                disabled={patientsLoading || Boolean(patientsError)}
-                className="w-full rounded-xl border border-slate-300 px-3 py-2.5 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
-              >
-                <option value="">
-                  {patientsLoading ? 'Patient:innen werden geladen…' : patientsError ? 'Patient:innen konnten nicht geladen werden' : 'Bitte wählen…'}
-                </option>
-                {patients.map((patient) => (
-                  <option key={patient.id} value={patient.id}>
-                    {patient.first_name} {patient.last_name}
-                  </option>
-                ))}
+              <select required value={formData.patient_id} onChange={e => setFormData(c => ({ ...c, patient_id: e.target.value }))} disabled={patientsLoading || !!patientsError} className="w-full rounded-xl border border-slate-300 px-3 py-2.5 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200">
+                <option value="">{patientsLoading ? 'Wird geladen…' : patientsError ? 'Fehler beim Laden' : 'Bitte wählen…'}</option>
+                {patients.map(p => <option key={p.id} value={p.id}>{p.first_name} {p.last_name}</option>)}
               </select>
-              {patientsError ? <p className="mt-2 text-xs text-red-600">{patientsError}</p> : null}
+              {patientsError && <p className="mt-1 text-xs text-red-600">{patientsError}</p>}
             </div>
             <div>
               <label className="mb-1 block text-sm font-medium text-slate-700">Therapeut/in</label>
-              <select
-                value={formData.therapist_id}
-                onChange={(event) => setFormData((current) => ({ ...current, therapist_id: event.target.value }))}
-                disabled={therapistsLoading || Boolean(therapistsError)}
-                className="w-full rounded-xl border border-slate-300 px-3 py-2.5 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
-              >
-                <option value="">
-                  {therapistsLoading ? 'Therapeut:innen werden geladen…' : therapistsError ? 'Therapeut:innen konnten nicht geladen werden' : 'Nicht zugeordnet'}
-                </option>
-                {therapists.map((therapist) => (
-                  <option key={therapist.id} value={therapist.id}>
-                    {therapist.name}
-                  </option>
-                ))}
+              <select value={formData.therapist_id} onChange={e => setFormData(c => ({ ...c, therapist_id: e.target.value }))} disabled={therapistsLoading || !!therapistsError} className="w-full rounded-xl border border-slate-300 px-3 py-2.5 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200">
+                <option value="">{therapistsLoading ? 'Wird geladen…' : therapistsError ? 'Fehler beim Laden' : 'Nicht zugeordnet'}</option>
+                {therapists.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
               </select>
-              {therapistsError ? <p className="mt-2 text-xs text-red-600">{therapistsError}</p> : null}
+              {therapistsError && <p className="mt-1 text-xs text-red-600">{therapistsError}</p>}
             </div>
           </div>
 
           <div className="grid gap-4 md:grid-cols-3">
             <div>
               <label className="mb-1 block text-sm font-medium text-slate-700">Datum</label>
-              <input
-                type="date"
-                required
-                value={formData.date}
-                onChange={(event) => setFormData((current) => ({ ...current, date: event.target.value }))}
-                className="w-full rounded-xl border border-slate-300 px-3 py-2.5 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
-              />
+              <input type="date" required value={formData.date} onChange={e => setFormData(c => ({ ...c, date: e.target.value }))} className="w-full rounded-xl border border-slate-300 px-3 py-2.5 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200" />
             </div>
             <div>
               <label className="mb-1 block text-sm font-medium text-slate-700">Von</label>
-              <input
-                type="time"
-                required
-                value={formData.time_start}
-                onChange={(event) => setFormData((current) => ({ ...current, time_start: event.target.value }))}
-                className="w-full rounded-xl border border-slate-300 px-3 py-2.5 font-mono focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
-              />
+              <input type="time" required value={formData.time_start} onChange={e => setFormData(c => ({ ...c, time_start: e.target.value }))} className="w-full rounded-xl border border-slate-300 px-3 py-2.5 font-mono focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200" />
             </div>
             <div>
               <label className="mb-1 block text-sm font-medium text-slate-700">Bis</label>
-              <input
-                type="time"
-                required
-                value={formData.time_end}
-                onChange={(event) => setFormData((current) => ({ ...current, time_end: event.target.value }))}
-                className="w-full rounded-xl border border-slate-300 px-3 py-2.5 font-mono focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
-              />
+              <input type="time" required value={formData.time_end} onChange={e => setFormData(c => ({ ...c, time_end: e.target.value }))} className="w-full rounded-xl border border-slate-300 px-3 py-2.5 font-mono focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200" />
             </div>
           </div>
 
           <div className="grid gap-4 md:grid-cols-2">
             <div>
               <label className="mb-1 block text-sm font-medium text-slate-700">Behandlungsart</label>
-              <select
-                value={formData.treatment_type}
-                onChange={(event) => setFormData((current) => ({ ...current, treatment_type: event.target.value }))}
-                className="w-full rounded-xl border border-slate-300 px-3 py-2.5 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
-              >
-                {treatmentTypes.map((type) => (
-                  <option key={type} value={type}>
-                    {type}
-                  </option>
-                ))}
+              <select value={formData.treatment_type} onChange={e => setFormData(c => ({ ...c, treatment_type: e.target.value }))} className="w-full rounded-xl border border-slate-300 px-3 py-2.5 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200">
+                {treatmentTypes.map(t => <option key={t} value={t}>{t}</option>)}
               </select>
             </div>
             <div>
               <label className="mb-1 block text-sm font-medium text-slate-700">SMS-Reminder</label>
-              <select
-                value={formData.sms_reminder}
-                onChange={(event) => setFormData((current) => ({ ...current, sms_reminder: Number(event.target.value) as 0 | 1 | 2 | 3 }))}
-                className="w-full rounded-xl border border-slate-300 px-3 py-2.5 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
-              >
+              <select value={formData.sms_reminder} onChange={e => setFormData(c => ({ ...c, sms_reminder: Number(e.target.value) as 0 | 1 | 2 | 3 }))} className="w-full rounded-xl border border-slate-300 px-3 py-2.5 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200">
                 <option value={0}>Keine Erinnerung</option>
                 <option value={2}>Automatisch planen</option>
                 <option value={1}>Bereits versendet</option>
@@ -1027,40 +649,18 @@ export default function Calendar({ initialModal, onModalConsumed }: CalendarProp
 
           <div>
             <label className="mb-1 block text-sm font-medium text-slate-700">Notizen</label>
-            <textarea
-              value={formData.notes}
-              onChange={(event) => setFormData((current) => ({ ...current, notes: event.target.value }))}
-              rows={4}
-              className="w-full rounded-xl border border-slate-300 px-3 py-2.5 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
-              placeholder="Hinweise zur Behandlung, Raum, interne Notizen …"
-            />
+            <textarea value={formData.notes} onChange={e => setFormData(c => ({ ...c, notes: e.target.value }))} rows={3} className="w-full rounded-xl border border-slate-300 px-3 py-2.5 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200" placeholder="Hinweise zur Behandlung, Raum, interne Notizen …" />
           </div>
 
           <div className="flex justify-end gap-3 border-t border-slate-200 pt-4">
-            {editingAppointment?.id ? (
+            {editingAppointment?.id && (
               <>
-                <button
-                  type="button"
-                  onClick={() => setConfirmAction({ message: 'Termin wirklich löschen?', onConfirm: () => void deleteAppointment(editingAppointment.id!) })}
-                  className="rounded-xl bg-red-700 px-4 py-2 text-sm font-medium text-white hover:bg-red-800"
-                >
-                  Löschen
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setConfirmAction({ message: 'Termin wirklich absagen?', onConfirm: () => void cancelAppointment(editingAppointment.id!) })}
-                  className="rounded-xl bg-red-50 px-4 py-2 text-sm font-medium text-red-700 hover:bg-red-100"
-                >
-                  Absagen
-                </button>
+                <button type="button" onClick={() => setConfirmAction({ message: 'Termin wirklich löschen?', onConfirm: () => void deleteAppointment(editingAppointment.id!) })} className="rounded-xl bg-red-700 px-4 py-2 text-sm font-medium text-white hover:bg-red-800">Löschen</button>
+                <button type="button" onClick={() => setConfirmAction({ message: 'Termin wirklich absagen?', onConfirm: () => void cancelAppointment(editingAppointment.id!) })} className="rounded-xl bg-red-50 px-4 py-2 text-sm font-medium text-red-700 hover:bg-red-100">Absagen</button>
               </>
-            ) : null}
-            <button type="button" onClick={() => setShowModal(false)} className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
-              Abbrechen
-            </button>
-            <button type="submit" className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700">
-              {editingAppointment ? 'Speichern' : 'Erstellen'}
-            </button>
+            )}
+            <button type="button" onClick={() => setShowModal(false)} className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">Abbrechen</button>
+            <button type="submit" className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700">{editingAppointment ? 'Speichern' : 'Erstellen'}</button>
           </div>
         </form>
       </Modal>
@@ -1069,11 +669,7 @@ export default function Calendar({ initialModal, onModalConsumed }: CalendarProp
         open={Boolean(confirmAction)}
         message={confirmAction?.message ?? ''}
         onCancel={() => setConfirmAction(null)}
-        onConfirm={() => {
-          const action = confirmAction?.onConfirm;
-          setConfirmAction(null);
-          action?.();
-        }}
+        onConfirm={() => { const action = confirmAction?.onConfirm; setConfirmAction(null); action?.(); }}
         confirmText="Bestätigen"
       />
     </div>

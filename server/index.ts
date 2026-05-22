@@ -18,7 +18,7 @@ import dashboardRouter from './routes/dashboard.js';
 import expensesRouter from './routes/expenses.js';
 import therapistsRouter from './routes/therapists.js';
 import vouchersRouter from './routes/vouchers.js';
-import { csrfMiddleware, getCsrfToken, regenerateCsrfToken } from './utils/csrf.js';
+import { csrfMiddleware, getCsrfToken, regenerateCsrfToken, isAllowedOrigin } from './utils/csrf.js';
 import { requireRole } from './utils/auth.js';
 import { respondWithServerError } from './utils/httpErrors.js';
 
@@ -30,30 +30,6 @@ async function main() {
   const app = express();
   const PORT = process.env.PORT || 3001;
 
-  function getAllowedOrigins() {
-    if (process.env.NODE_ENV === 'production') {
-      return [process.env.PHYSIOFLOW_ORIGIN || 'https://physio-flow.online'];
-    }
-
-    return [
-      'http://localhost:5173',
-      'http://localhost:3001',
-      'http://localhost:4173',
-      'http://127.0.0.1:5173',
-      'http://127.0.0.1:3001',
-      'http://127.0.0.1:4173',
-    ];
-  }
-
-  const ALLOWED_ORIGINS = getAllowedOrigins();
-
-  function isAllowedOrigin(origin?: string) {
-    if (!origin) {
-      return true; // allow same-origin & direct requests (no Origin header)
-    }
-
-    return ALLOWED_ORIGINS.includes(origin);
-  }
 
   // ---------------------------------------------------------------------------
   // Helmet – security headers
@@ -63,10 +39,10 @@ async function main() {
       directives: {
         defaultSrc: ["'self'"],
         scriptSrc: ["'self'"],
-        styleSrc: ["'self'", "'unsafe-inline'"],
-        imgSrc: ["'self'", "data:"],
+        styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
+        imgSrc: ["'self'", "data:", "blob:"],
         connectSrc: ["'self'"],
-        fontSrc: ["'self'"],
+        fontSrc: ["'self'", "https://fonts.gstatic.com"],
         objectSrc: ["'none'"],
         frameAncestors: ["'none'"],
         upgradeInsecureRequests: [],
@@ -103,7 +79,7 @@ async function main() {
 
   // DEBUG: Request logger (nur in Entwicklung)
   if (process.env.NODE_ENV !== 'production') {
-    app.use((req, res, next) => {
+    app.use((req, _res, next) => {
       console.log('[DEBUG REQUEST]', req.method, req.url, req.path);
       next();
     });
@@ -120,7 +96,6 @@ async function main() {
     throw new Error('SESSION_SECRET is required in production. Set it in .env');
   }
   app.set('trust proxy', 1);
-  console.log('[DEBUG] Setting up session middleware...');
   app.use(session({
     secret: SESSION_SECRET,
     resave: false,
@@ -132,34 +107,23 @@ async function main() {
       maxAge: 24 * 60 * 60 * 1000, // 24 hours
     },
   }));
-  console.log('[DEBUG] Session middleware configured');
+
 
   // ---------------------------------------------------------------------------
   // CSRF protection — Double Submit Cookie via session
   // ---------------------------------------------------------------------------
-  console.log('[DEBUG] Setting up CSRF middleware...');
   app.use('/api', (req, res, next) => {
-    console.log('[DEBUG] CSRF middleware hit:', req.method, req.path);
     try {
       csrfMiddleware(req, res, next);
     } catch (err) {
-      console.error('[DEBUG] CSRF middleware ERROR:', err);
       next(err);
     }
   });
-  console.log('[DEBUG] CSRF middleware configured');
 
   app.get('/api/csrf-token', (req: express.Request, res: express.Response) => {
-    console.log('[DEBUG] /api/csrf-token hit');
-    console.log('[DEBUG] req.session exists?', !!req.session);
-    console.log('[DEBUG] req.session type:', typeof req.session);
-    if (req.session) {
-      console.log('[DEBUG] req.session keys:', Object.keys(req.session));
-    }
     try {
       getCsrfToken(req, res);
     } catch (err) {
-      console.error('[DEBUG] getCsrfToken error:', err);
       res.status(500).json({ success: false, error: String(err) });
     }
   });
@@ -263,6 +227,10 @@ async function main() {
     finalizeLogin({ id: user.id, username: user.username, role: user.role });
   });
 
+  const getLimiter = createApiRateLimiter(120, 'Zu viele Anfragen. Bitte in einer Minute erneut versuchen.');
+
+  app.use('/api', applyLimiterForMethods(['GET'], getLimiter));
+
   app.use('/api/invoices/:id/pdf', applyLimiterForMethods(['GET'], pdfGenerationLimiter));
   app.use('/api/appointments/ical', applyLimiterForMethods(['GET'], iCalExportLimiter));
   app.use('/api/sms', applyLimiterForMethods(['POST'], smsLimiter));
@@ -346,3 +314,11 @@ async function main() {
 }
 
 main().catch(console.error);
+
+process.on('unhandledRejection', (reason: unknown) => {
+  console.error('Unhandled promise rejection:', reason);
+});
+
+process.on('uncaughtException', (error: Error) => {
+  console.error('Uncaught exception:', error);
+});

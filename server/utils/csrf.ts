@@ -3,7 +3,7 @@ import crypto from 'crypto';
 
 const CSRF_HEADER = 'x-csrf-token';
 
-function getAllowedOrigins() {
+export function getAllowedOrigins() {
   if (process.env.NODE_ENV === 'production') {
     return [process.env.PHYSIOFLOW_ORIGIN || 'https://physio-flow.online'];
   }
@@ -17,7 +17,7 @@ function getAllowedOrigins() {
   ];
 }
 
-function isAllowedOrigin(origin?: string) {
+export function isAllowedOrigin(origin?: string) {
   if (!origin) return true; // allow same-origin & direct requests (no Origin header)
   return getAllowedOrigins().includes(origin);
 }

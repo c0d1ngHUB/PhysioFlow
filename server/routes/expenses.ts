@@ -5,13 +5,14 @@ import { respondWithServerError } from '../utils/httpErrors.js';
 import { expenseSchema, expenseUpdateSchema, validateBody } from '../utils/validation.js';
 import { logAudit, getAuditContext, safeJson } from '../utils/auditLog.js';
 import { getPaginationParams } from '../utils/pagination.js';
+import { getSingleQueryValue } from '../utils/formatting.js';
 
 const router = Router();
 type SqlParam = string | number | null;
 
-function getSingleQueryValue(value: unknown): string | undefined {
-  return typeof value === 'string' ? value : undefined;
-}
+const ALLOWED_EXPENSE_FIELDS = new Set([
+  'category', 'description', 'amount', 'date', 'receipt_path',
+]);
 
 // Get all expenses
 router.get('/', (req, res) => {
@@ -128,11 +129,11 @@ router.put('/:id', requireRole('admin'), validateBody(expenseUpdateSchema), (req
     const updates: string[] = [];
     const values: unknown[] = [];
 
-    if ('category' in body) { updates.push('category = ?'); values.push(body.category); }
-    if ('description' in body) { updates.push('description = ?'); values.push(body.description); }
-    if ('amount' in body) { updates.push('amount = ?'); values.push(body.amount); }
-    if ('date' in body) { updates.push('date = ?'); values.push(body.date); }
-    if ('receipt_path' in body) { updates.push('receipt_path = ?'); values.push(body.receipt_path); }
+    for (const key of Object.keys(body)) {
+      if (!ALLOWED_EXPENSE_FIELDS.has(key)) continue;
+      updates.push(`${key} = ?`);
+      values.push(body[key]);
+    }
 
     if (updates.length === 0) {
       return res.status(400).json({ success: false, error: 'Keine Felder zum Aktualisieren angegeben' });

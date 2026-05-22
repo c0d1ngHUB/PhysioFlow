@@ -1,0 +1,33 @@
+/* PhysioFlow Accessibility & Mobile Fix */
+
+/* WCAG: 44px minimum touch target */
+button, a, [role="button"], input[type="submit"] { min-height: 44px; min-width: 44px; }
+
+/* Focus visible for keyboard navigation */
+:focus-visible {
+  outline: 2px solid #10b981;
+  outline-offset: 2px;
+}
+
+/* Better contrast for subtle text */
+[class*="text-gray-400"], [class*="text-gray-500"] { color: #94a3b8; }
+
+/* Reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* PWA standalone mode */
+@media all and (display-mode: standalone) {
+  html, body, #root { height: 100vh; }
+}
+
+/* Safe area insets for notch devices */
+body {
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+}

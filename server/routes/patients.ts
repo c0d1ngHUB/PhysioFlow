@@ -6,15 +6,11 @@ import { patientSchema, patientUpdateSchema, validateBody } from '../utils/valid
 import { logAudit, getAuditContext, safeJson } from '../utils/auditLog.js';
 import { getPaginationParams, paginatedResponse } from '../utils/pagination.js';
 
-const router = Router();
+const ALLOWED_PATIENT_FIELDS = new Set([
+  'first_name', 'last_name', 'phone', 'email', 'birthdate', 'notes', 'address', 'insurance_number',
+]);
 
-// Ensure newer columns exist (idempotent for existing databases)
-try {
-  db.prepare('ALTER TABLE patients ADD COLUMN insurance_number TEXT').run();
-} catch { /* column already exists */ }
-try {
-  db.prepare('ALTER TABLE patients ADD COLUMN address TEXT').run();
-} catch { /* column already exists */ }
+const router = Router();
 
 // Get all patients
 router.get('/', (req, res) => {
@@ -79,14 +75,11 @@ router.put('/:id', requireRole('admin'), validateBody(patientUpdateSchema), (req
     const updates: string[] = [];
     const values: unknown[] = [];
 
-    if ('first_name' in body) { updates.push('first_name = ?'); values.push(body.first_name); }
-    if ('last_name' in body) { updates.push('last_name = ?'); values.push(body.last_name); }
-    if ('phone' in body) { updates.push('phone = ?'); values.push(body.phone); }
-    if ('email' in body) { updates.push('email = ?'); values.push(body.email); }
-    if ('birthdate' in body) { updates.push('birthdate = ?'); values.push(body.birthdate); }
-    if ('notes' in body) { updates.push('notes = ?'); values.push(body.notes); }
-    if ('address' in body) { updates.push('address = ?'); values.push(body.address); }
-    if ('insurance_number' in body) { updates.push('insurance_number = ?'); values.push(body.insurance_number); }
+    for (const key of Object.keys(body)) {
+      if (!ALLOWED_PATIENT_FIELDS.has(key)) continue;
+      updates.push(`${key} = ?`);
+      values.push(body[key]);
+    }
 
     if (updates.length === 0) {
       return res.status(400).json({ success: false, error: 'Keine Felder zum Aktualisieren angegeben' });

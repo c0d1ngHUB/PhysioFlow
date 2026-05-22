@@ -4,16 +4,14 @@ import PDFDocument from 'pdfkit';
 import QRCode from 'qrcode';
 import { requireRole } from '../utils/auth.js';
 import { respondWithServerError } from '../utils/httpErrors.js';
-import { formatCurrency } from '../utils/formatting.js';
+import { formatCurrency, getSingleQueryValue } from '../utils/formatting.js';
 import { logAudit, getAuditContext, safeJson } from '../utils/auditLog.js';
 import { getPaginationParams, paginatedResponse } from '../utils/pagination.js';
 
 const router = Router();
 type SqlParam = string | number | null;
 
-function getSingleQueryValue(value: unknown): string | undefined {
-  return typeof value === 'string' ? value : undefined;
-}
+
 
 const DUNNING_LABELS: Record<number, string> = {
   0: 'Keine Mahnung',

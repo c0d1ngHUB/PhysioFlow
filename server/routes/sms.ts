@@ -3,19 +3,13 @@ import db from '../db/index.js';
 import { formatPhone, getSmsProviderStatus, sendSms } from '../services/sms.js';
 import { requireRole } from '../utils/auth.js';
 import { respondWithServerError } from '../utils/httpErrors.js';
+import { validateBody, smsSendSchema } from '../utils/validation.js';
 
 const router = Router();
 
 // Send SMS reminder
-router.post('/send', requireRole('admin'), async (req, res) => {
+router.post('/send', requireRole('admin'), validateBody(smsSendSchema), async (req, res) => {
   const { to, patient_name, appointment_date, appointment_time } = req.body;
-  
-  if (!to || !patient_name || !appointment_date || !appointment_time) {
-    return res.status(400).json({ 
-      success: false, 
-      error: 'Telefonnummer, Name, Datum und Zeit sind erforderlich' 
-    });
-  }
   
   let phone: string;
   try {

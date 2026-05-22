@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Patient } from '../types';
 import { Modal, showToast, ConfirmModal, Pagination } from '../components/ui';
+import { formatCurrency } from '../utils/formatting';
 import { apiFetch } from '../utils/api.js';
 
 interface PatientsProps {
@@ -199,7 +200,7 @@ export default function Patients({ initialModal, onModalConsumed }: PatientsProp
       {/* Search */}
       <div className="relative">
         <input type="text" placeholder="Patient suchen (Name, Telefon, E-Mail)..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="w-full px-4 py-3 pl-12 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 shadow-sm" />
-        <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400">🔍</span>
+        <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500">🔍</span>
       </div>
 
       {patientsError ? (
@@ -228,10 +229,10 @@ export default function Patients({ initialModal, onModalConsumed }: PatientsProp
                 </div>
               </div>
             </div>
-            <div className="flex gap-2 mt-4 pt-4 border-t border-gray-100">
-              <button onClick={(e) => { e.stopPropagation(); openHistory(patient); }} className="flex-1 px-3 py-2 bg-blue-50 text-blue-600 rounded-lg text-sm font-medium hover:bg-blue-100 transition-colors">Historie</button>
-              <button onClick={(e) => { e.stopPropagation(); openModal(patient); }} className="flex-1 px-3 py-2 bg-blue-50 text-blue-600 rounded-lg text-sm font-medium hover:bg-blue-100 transition-colors">Bearbeiten</button>
-              <button onClick={(e) => { e.stopPropagation(); handleDelete(patient.id!); }} className="px-3 py-2 bg-red-50 text-red-600 rounded-lg text-sm font-medium hover:bg-red-100 transition-colors">🗑️</button>
+            <div className="flex gap-3 mt-4 pt-4 border-t border-gray-100">
+              <button onClick={(e) => { e.stopPropagation(); openHistory(patient); }} className="flex-1 px-3 py-2 bg-blue-50 text-blue-600 rounded-lg text-sm font-medium hover:bg-blue-100 transition-colors min-h-[44px]">Historie</button>
+              <button onClick={(e) => { e.stopPropagation(); openModal(patient); }} className="flex-1 px-3 py-2 bg-blue-50 text-blue-600 rounded-lg text-sm font-medium hover:bg-blue-100 transition-colors min-h-[44px]">Bearbeiten</button>
+              <button onClick={(e) => { e.stopPropagation(); handleDelete(patient.id!); }} className="px-3 py-2 bg-red-50 text-red-600 rounded-lg text-sm font-medium hover:bg-red-100 transition-colors min-h-[44px] min-w-[44px]">🗑️</button>
             </div>
           </div>
         ))}
@@ -242,7 +243,7 @@ export default function Patients({ initialModal, onModalConsumed }: PatientsProp
         <div className="bg-white rounded-xl border border-gray-200 p-12 text-center">
           <span className="text-5xl mb-4 block">👤</span>
           <p className="text-gray-500 font-medium text-lg">{searchTerm ? 'Kein Patient gefunden' : 'Noch keine Patienten registriert'}</p>
-          <p className="text-gray-400 text-sm mt-2">{searchTerm ? 'Versuchen Sie einen anderen Suchbegriff' : 'Starten Sie mit dem ersten Patienten'}</p>
+          <p className="text-gray-500 text-sm mt-2">{searchTerm ? 'Versuchen Sie einen anderen Suchbegriff' : 'Starten Sie mit dem ersten Patienten'}</p>
           {!searchTerm && <button onClick={() => openModal()} className="mt-4 px-6 py-2.5 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition-colors">+ Ersten Patienten anlegen</button>}
         </div>
       )}
@@ -274,7 +275,7 @@ export default function Patients({ initialModal, onModalConsumed }: PatientsProp
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1.5">Adresse</label>
-            <input type="text" value={formData.address} onChange={(e) => setFormData({ ...formData, address: e.target.value })} className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="Musterstraße 1, 9020 Klagenfurt" />
+            <input type="text" value={formData.address} onChange={(e) => setFormData({ ...formData, address: e.target.value })} className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="Musterstraße 1, 6800 Feldkirch" />
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div>
@@ -385,7 +386,7 @@ export default function Patients({ initialModal, onModalConsumed }: PatientsProp
                             <tr key={inv.id} className="hover:bg-blue-50/50 transition-colors">
                               <td className="px-4 py-3 text-gray-900 font-mono text-xs">{inv.invoice_number}</td>
                               <td className="px-4 py-3 text-gray-700">{new Date(inv.created_at).toLocaleDateString('de-AT')}</td>
-                              <td className="px-4 py-3 text-gray-900 text-right font-semibold">{new Intl.NumberFormat('de-AT', { style: 'currency', currency: 'EUR' }).format(inv.total)}</td>
+                              <td className="px-4 py-3 text-gray-900 text-right font-semibold">{formatCurrency(inv.total)}</td>
                               <td className="px-4 py-3 text-center">
                                 <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${inv.paid ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>{inv.paid ? '✓ Bezahlt' : '⏳ Offen'}</span>
                               </td>

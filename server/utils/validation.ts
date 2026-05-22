@@ -44,6 +44,20 @@ export const appointmentUpdateSchema = appointmentSchema.partial();
 export const voucherUpdateSchema = voucherSchema.partial();
 export const expenseUpdateSchema = expenseSchema.partial();
 
+export const therapistCreateSchema = z.object({
+  name: z.string().min(1, 'Name ist erforderlich'),
+  color: z.string().regex(/^#[0-9A-Fa-f]{6}$/, 'Farbe muss ein Hex-Code sein').default('#2563EB'),
+});
+
+export const therapistUpdateSchema = therapistCreateSchema;
+
+export const smsSendSchema = z.object({
+  to: z.string().min(1, 'Telefonnummer ist erforderlich'),
+  patient_name: z.string().min(1, 'Patientenname ist erforderlich'),
+  appointment_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Datum muss YYYY-MM-DD sein'),
+  appointment_time: z.string().regex(/^\d{2}:\d{2}$/, 'Zeit muss HH:MM sein'),
+});
+
 export function validateBody(schema: z.ZodSchema) {
   return (req: Request, res: Response, next: NextFunction) => {
     const result = schema.safeParse(req.body);

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Patient, Therapist, Voucher } from '../types';
 import { ConfirmModal, Modal, showToast } from '../components/ui';
+import { formatCurrency } from '../utils/formatting';
 import { apiFetch } from '../utils/api.js';
 import { useAuth } from '../auth';
 
@@ -34,7 +35,7 @@ export default function Admin() {
     used: false,
   });
 
-  const [confirmAction, setConfirmAction] = useState<{ message: string; onConfirm: () => void } | null>(null);
+  const [confirmAction, setConfirmAction] = useState<{ message: string; onConfirm: () => void; title?: string; variant?: 'danger' | 'default' } | null>(null);
 
   useEffect(() => {
     if (user?.role !== 'admin') {
@@ -377,7 +378,7 @@ export default function Admin() {
                       <td className="px-4 py-3 text-sm text-slate-700">{voucher.description}</td>
                       <td className="px-4 py-3 text-sm text-slate-600">{voucher.patient_name || 'Nicht zugeordnet'}</td>
                       <td className="px-4 py-3 text-right text-sm font-semibold text-slate-900">
-                        {new Intl.NumberFormat('de-AT', { style: 'currency', currency: 'EUR' }).format(voucher.value)}
+                        {formatCurrency(voucher.value)}
                       </td>
                       <td className="px-4 py-3 text-sm text-slate-600">
                         {voucher.expires_at ? new Date(voucher.expires_at).toLocaleDateString('de-AT') : 'Kein Ablauf'}
@@ -398,7 +399,7 @@ export default function Admin() {
                       <td className="px-4 py-3">
                         <div className="flex justify-end gap-2">
                           <button
-                            onClick={() => toggleVoucherUsed(voucher)}
+                            onClick={() => setConfirmAction({ title: 'Gutschein einlösen', message: voucher.used ? `Gutschein "${voucher.code}" wieder als nicht eingelöst markieren?` : `Gutschein "${voucher.code}" als eingelöst markieren? Dies kann nicht rückgängig gemacht werden.`, variant: 'default', onConfirm: () => void toggleVoucherUsed(voucher) })}
                             disabled={voucherActionId === voucher.id}
                             className="rounded-lg bg-slate-100 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-200 disabled:cursor-not-allowed disabled:opacity-60"
                           >
@@ -547,6 +548,7 @@ export default function Admin() {
 
       <ConfirmModal
         open={Boolean(confirmAction)}
+        title={confirmAction?.title}
         message={confirmAction?.message ?? ''}
         onCancel={() => setConfirmAction(null)}
         onConfirm={() => {
@@ -555,6 +557,7 @@ export default function Admin() {
           action?.();
         }}
         confirmText="Bestätigen"
+        variant={confirmAction?.variant || 'danger'}
       />
     </div>
   );

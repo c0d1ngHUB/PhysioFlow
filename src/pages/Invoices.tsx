@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Appointment, Invoice, Patient } from '../types';
 import { ConfirmModal, Modal, showToast } from '../components/ui';
+import { formatCurrency } from '../utils/formatting';
 import { apiFetch } from '../utils/api.js';
 
 interface InvoicesProps {
@@ -22,9 +23,7 @@ const dunningLabel: Record<Invoice['dunning_level'], string> = {
   3: 'Letzte Mahnung',
 };
 
-function formatCurrency(amount: number) {
-  return new Intl.NumberFormat('de-AT', { style: 'currency', currency: 'EUR' }).format(amount);
-}
+
 
 export default function Invoices({ initialModal, onModalConsumed }: InvoicesProps) {
   const [invoices, setInvoices] = useState<Invoice[]>([]);
@@ -33,7 +32,7 @@ export default function Invoices({ initialModal, onModalConsumed }: InvoicesProp
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [filterPaid, setFilterPaid] = useState<'all' | 'paid' | 'unpaid'>('all');
-  const [confirmAction, setConfirmAction] = useState<{ message: string; onConfirm: () => void } | null>(null);
+  const [confirmAction, setConfirmAction] = useState<{ message: string; onConfirm: () => void; title?: string; variant?: 'danger' | 'default' } | null>(null);
   const [formData, setFormData] = useState({
     patient_id: '',
     appointment_id: '',
@@ -275,7 +274,47 @@ export default function Invoices({ initialModal, onModalConsumed }: InvoicesProp
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-slate-200">
+            <div className="md:hidden space-y-3 p-4">
+              {invoices.map((invoice) => (
+                <div key={invoice.id} className="rounded-xl border border-slate-200 p-4 bg-white shadow-sm space-y-2">
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <p className="font-mono text-sm font-semibold text-blue-700">{invoice.invoice_number}</p>
+                      <p className="text-xs text-slate-500">{invoice.patient_name}</p>
+                    </div>
+                    <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${invoice.paid ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}>
+                      {invoice.paid ? 'Bezahlt' : 'Offen'}
+                    </span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-slate-600">{invoice.created_at ? new Date(invoice.created_at).toLocaleDateString('de-AT') : '—'}</span>
+                    <span className="font-semibold text-slate-900">{formatCurrency(invoice.total)}</span>
+                  </div>
+                  <div className="flex flex-wrap gap-2 pt-2 border-t border-slate-100">
+                    {!invoice.paid && invoice.dunning_level < 3 ? (
+                      <button onClick={() => setConfirmAction({ title: 'Mahnstufe erhöhen', message: `Mahnstufe für Rechnung ${invoice.invoice_number || invoice.id} auf Stufe ${dunningLabel[Math.min(invoice.dunning_level + 1, 3) as Invoice['dunning_level']]} erhöhen?`, variant: 'danger', onConfirm: () => void escalateDunning(invoice) })} className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800 hover:bg-amber-100 min-h-[44px]">
+                        Mahnstufe +
+                      </button>
+                    ) : null}
+                    {invoice.dunning_level > 0 ? (
+                      <button onClick={() => window.open(`/api/invoices/${invoice.id}/dunning-letter.pdf`, '_blank')} className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700 hover:bg-red-100 min-h-[44px]">
+                        Mahnbrief
+                      </button>
+                    ) : null}
+                    <button onClick={() => window.open(`/api/invoices/${invoice.id}/pdf`, '_blank')} className="rounded-lg bg-slate-100 px-3 py-2 text-sm text-slate-700 hover:bg-slate-200 min-h-[44px]">
+                      PDF
+                    </button>
+                    <button
+                      onClick={() => setConfirmAction({ message: 'Honorarnote wirklich löschen?', onConfirm: () => void deleteInvoice(invoice.id!) })}
+                      className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700 hover:bg-red-100 min-h-[44px]"
+                    >
+                      Löschen
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <table className="min-w-full divide-y divide-slate-200 hidden md:table">
               <thead className="bg-slate-50">
                 <tr>
                   <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Rechnung</th>
@@ -303,8 +342,8 @@ export default function Invoices({ initialModal, onModalConsumed }: InvoicesProp
                     <td className="px-4 py-3 text-right text-sm font-semibold text-slate-900">{formatCurrency(invoice.total)}</td>
                     <td className="px-4 py-3">
                       <button
-                        onClick={() => togglePaid(invoice)}
-                        className={`rounded-full px-3 py-1 text-xs font-medium ${
+                        onClick={() => setConfirmAction({ title: invoice.paid ? 'Rechnung öffnen' : 'Rechnung bezahlen', message: invoice.paid ? `Rechnung ${invoice.invoice_number || invoice.id} wieder als offen markieren?` : `Rechnung ${invoice.invoice_number || invoice.id} als bezahlt markieren? Dies kann nicht rückgängig gemacht werden.`, variant: invoice.paid ? 'default' : 'default', onConfirm: () => void togglePaid(invoice) })}
+                        className={`rounded-full px-3 py-1 text-xs font-medium min-h-[44px] min-w-[44px] ${
                           invoice.paid ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
                         }`}
                       >
@@ -324,21 +363,21 @@ export default function Invoices({ initialModal, onModalConsumed }: InvoicesProp
                     <td className="px-4 py-3">
                       <div className="flex justify-end gap-2">
                         {!invoice.paid && invoice.dunning_level < 3 ? (
-                          <button onClick={() => escalateDunning(invoice)} className="rounded-lg bg-amber-50 px-3 py-1.5 text-sm text-amber-800 hover:bg-amber-100">
+                          <button onClick={() => setConfirmAction({ title: 'Mahnstufe erhöhen', message: `Mahnstufe für Rechnung ${invoice.invoice_number || invoice.id} auf Stufe ${dunningLabel[Math.min(invoice.dunning_level + 1, 3) as Invoice['dunning_level']]} erhöhen?`, variant: 'danger', onConfirm: () => void escalateDunning(invoice) })} className="rounded-lg bg-amber-50 px-3 py-1.5 text-sm text-amber-800 hover:bg-amber-100 min-h-[44px]">
                             Mahnstufe +
                           </button>
                         ) : null}
                         {invoice.dunning_level > 0 ? (
-                          <button onClick={() => window.open(`/api/invoices/${invoice.id}/dunning-letter.pdf`, '_blank')} className="rounded-lg bg-red-50 px-3 py-1.5 text-sm text-red-700 hover:bg-red-100">
+                          <button onClick={() => window.open(`/api/invoices/${invoice.id}/dunning-letter.pdf`, '_blank')} className="rounded-lg bg-red-50 px-3 py-1.5 text-sm text-red-700 hover:bg-red-100 min-h-[44px]">
                             Mahnbrief
                           </button>
                         ) : null}
-                        <button onClick={() => window.open(`/api/invoices/${invoice.id}/pdf`, '_blank')} className="rounded-lg bg-slate-100 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-200">
+                        <button onClick={() => window.open(`/api/invoices/${invoice.id}/pdf`, '_blank')} className="rounded-lg bg-slate-100 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-200 min-h-[44px]">
                           PDF
                         </button>
                         <button
                           onClick={() => setConfirmAction({ message: 'Honorarnote wirklich löschen?', onConfirm: () => void deleteInvoice(invoice.id!) })}
-                          className="rounded-lg bg-red-50 px-3 py-1.5 text-sm text-red-700 hover:bg-red-100"
+                          className="rounded-lg bg-red-50 px-3 py-1.5 text-sm text-red-700 hover:bg-red-100 min-h-[44px]"
                         >
                           Löschen
                         </button>
@@ -447,6 +486,7 @@ export default function Invoices({ initialModal, onModalConsumed }: InvoicesProp
 
       <ConfirmModal
         open={Boolean(confirmAction)}
+        title={confirmAction?.title}
         message={confirmAction?.message ?? ''}
         onCancel={() => setConfirmAction(null)}
         onConfirm={() => {
@@ -455,7 +495,7 @@ export default function Invoices({ initialModal, onModalConsumed }: InvoicesProp
           action?.();
         }}
         confirmText="Bestätigen"
-        variant="danger"
+        variant={confirmAction?.variant || 'danger'}
       />
     </div>
   );

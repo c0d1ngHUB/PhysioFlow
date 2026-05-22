@@ -6,6 +6,7 @@ import { getWeekRange } from '../utils/date.js';
 import { appointmentSchema, appointmentUpdateSchema, validateBody } from '../utils/validation.js';
 import { logAudit, getAuditContext, safeJson } from '../utils/auditLog.js';
 import { getPaginationParams, paginatedResponse } from '../utils/pagination.js';
+import { getSingleQueryValue } from '../utils/formatting.js';
 
 const router = Router();
 type SqlParam = string | number | null;
@@ -22,9 +23,7 @@ function escapeIcs(value: string): string {
     .replace(/;/g, '\\;');
 }
 
-function getSingleQueryValue(value: unknown): string | undefined {
-  return typeof value === 'string' ? value : undefined;
-}
+
 
 // Get all appointments (with optional date/week/month filter)
 router.get('/', (req, res) => {
