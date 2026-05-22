@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import db from '../db/index.js';
-import { requireRole } from '../utils/auth.js';
+import { requireAuth, requireRole } from '../utils/auth.js';
 import { respondWithServerError } from '../utils/httpErrors.js';
 import { getWeekRange } from '../utils/date.js';
 import { appointmentSchema, appointmentUpdateSchema, validateBody } from '../utils/validation.js';
@@ -94,7 +94,7 @@ router.get('/', (req, res) => {
   }
 });
 
-router.get('/ical', (_req, res) => {
+router.get('/ical', requireAuth, (_req, res) => {
   try {
     const appointments = db.prepare(`
       SELECT

@@ -17,8 +17,15 @@ export function getAllowedOrigins() {
   ];
 }
 
-export function isAllowedOrigin(origin?: string) {
-  if (!origin) return true; // allow same-origin & direct requests (no Origin header)
+export function isAllowedOrigin(origin?: string, method?: string) {
+  // For mutation requests (POST, PUT, DELETE, PATCH), require Origin header
+  // to prevent CSRF attacks from tools that don't send Origin
+  if (!origin) {
+    if (method && ['POST', 'PUT', 'DELETE', 'PATCH'].includes(method.toUpperCase())) {
+      return false;
+    }
+    return true; // allow same-origin & direct GET requests
+  }
   return getAllowedOrigins().includes(origin);
 }
 
@@ -36,7 +43,7 @@ export function csrfMiddleware(req: Request, res: Response, next: NextFunction) 
 
   // Origin validation
   const origin = req.headers.origin || req.headers.referer;
-  if (!isAllowedOrigin(origin)) {
+  if (!isAllowedOrigin(origin, req.method)) {
     res.status(403).json({ success: false, error: 'Ursprung nicht erlaubt (Origin-Validation).' });
     return;
   }

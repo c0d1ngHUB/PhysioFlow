@@ -76,17 +76,7 @@ function restorePendingRoute() {
   }
 }
 
-const originalFetch = window.fetch;
-window.fetch = async function (...args: Parameters<typeof originalFetch>) {
-  const response = await originalFetch(...args);
-  const requestUrl = getRequestUrl(args[0]);
-
-  if (response.status === 401 && !shouldSkipAuthFailure(requestUrl)) {
-    onAuthFailure?.();
-  }
-
-  return response;
-};
+// 401 interception is handled via apiFetch in utils/api.js — no global fetch override needed
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [authenticated, setAuthenticated] = useState(false);
@@ -128,12 +118,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         authFailureHandledRef.current = false;
         setAuthenticated(true);
         setUser(data.user || null);
-        if (data.csrfToken) {
-          // cache csrf token for subsequent requests
-          // @ts-ignore — internal helper exposed in module scope above
-          // eslint-disable-next-line no-underscore-dangle
-          (window as any).__physioflow_csrf = data.csrfToken;
-        }
+        // CSRF token is cached by api.ts getCsrfToken() — no window global needed
         await getCsrfToken();
         restorePendingRoute();
         return { success: true };

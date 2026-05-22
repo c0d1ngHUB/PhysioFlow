@@ -12,9 +12,6 @@ const router = Router();
 router.use(requireAuth);
 
 // POST, PUT, DELETE nur für Admin
-router.post('/', requireRole('admin'));
-router.put('/:id', requireRole('admin'));
-router.delete('/:id', requireRole('admin'));
 
 router.get('/', (req, res) => {
   try {
@@ -40,7 +37,7 @@ router.get('/', (req, res) => {
   }
 });
 
-router.post('/', validateBody(voucherSchema), (req, res) => {
+router.post('/', requireRole('admin'), validateBody(voucherSchema), (req, res) => {
   const { code, patient_id, description, value, expires_at } = req.body ?? {};
 
   try {
@@ -65,7 +62,7 @@ router.post('/', validateBody(voucherSchema), (req, res) => {
   }
 });
 
-router.put('/:id', validateBody(voucherUpdateSchema), (req, res) => {
+router.put('/:id', requireRole('admin'), validateBody(voucherUpdateSchema), (req, res) => {
   const { code, patient_id, description, value, expires_at, used } = req.body ?? {};
 
   try {
@@ -108,7 +105,7 @@ router.put('/:id', validateBody(voucherUpdateSchema), (req, res) => {
   }
 });
 
-router.post('/:id/use', (req, res) => {
+router.post('/:id/use', requireRole('admin'), (req, res) => {
   const { used } = req.body ?? {};
 
   try {
@@ -139,7 +136,7 @@ router.post('/:id/use', (req, res) => {
   }
 });
 
-router.delete('/:id', (req, res) => {
+router.delete('/:id', requireRole('admin'), (req, res) => {
   try {
     const old = db.prepare('SELECT * FROM vouchers WHERE id = ?').get(req.params.id);
     const result = db.prepare('DELETE FROM vouchers WHERE id = ?').run(req.params.id);

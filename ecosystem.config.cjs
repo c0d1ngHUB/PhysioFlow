@@ -2,10 +2,10 @@ module.exports = {
   apps: [
     {
       name: 'physioflow-server',
-      script: '/home/m3kky/PhysioFlow/server/index.ts',
+      script: '/home/pi/PhysioFlow/server/index.ts',
       interpreter: 'node',
       node_args: '--import tsx',
-      cwd: '/home/m3kky/PhysioFlow',
+      cwd: '/home/pi/PhysioFlow',
       env: {
         NODE_ENV: 'production',
         PORT: 3001,

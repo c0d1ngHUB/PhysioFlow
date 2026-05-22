@@ -1,23 +1,50 @@
+import { setOnAuthFailure } from '../auth';
+
 let cachedCsrfToken: string | null = null;
+let csrfPromise: Promise<string | null> | null = null;
 
 export async function getCsrfToken(): Promise<string | null> {
   if (cachedCsrfToken) return cachedCsrfToken;
-  try {
-    const res = await fetch('/api/csrf-token', { credentials: 'same-origin' });
-    if (!res.ok) return null;
-    const data = await res.json();
-    if (data.success && data.csrfToken) {
-      cachedCsrfToken = data.csrfToken;
-      return cachedCsrfToken;
+  
+  // Promise deduplication: prevent parallel requests from fetching CSRF token twice
+  if (csrfPromise) return csrfPromise;
+  
+  csrfPromise = (async () => {
+    try {
+      const res = await fetch('/api/csrf-token', { credentials: 'same-origin' });
+      if (!res.ok) return null;
+      const data = await res.json();
+      if (data.success && data.csrfToken) {
+        cachedCsrfToken = data.csrfToken;
+        return cachedCsrfToken;
+      }
+      return null;
+    } catch {
+      return null;
+    } finally {
+      csrfPromise = null;
     }
-  } catch {
-    // ignore
-  }
-  return null;
+  })();
+  
+  return csrfPromise;
 }
 
 export function clearCsrfToken() {
   cachedCsrfToken = null;
+  csrfPromise = null;
+}
+
+// 401 handler — triggers auth failure callback
+let authFailureHandled = false;
+
+setOnAuthFailure(() => {
+  if (authFailureHandled) return;
+  authFailureHandled = true;
+  // Re-export will be handled by auth.tsx AuthProvider
+});
+
+export function resetAuthFailureState() {
+  authFailureHandled = false;
 }
 
 export async function apiFetch(
@@ -43,6 +70,16 @@ export async function apiFetch(
     headers,
     credentials: init?.credentials ?? 'same-origin',
   });
+
+  // 401 interception — only in apiFetch, no global fetch override
+  if (res.status === 401) {
+    const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+    if (!url.includes('/api/auth/login') && !url.includes('/api/auth/check') && !url.includes('/api/auth/logout')) {
+      // Trigger auth failure via imported callback
+      const { onAuthFailure } = await import('../auth');
+      onAuthFailure?.();
+    }
+  }
 
   if (res.status === 403) {
     const data = await res.clone().json().catch(() => ({}));

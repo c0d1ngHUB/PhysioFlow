@@ -21,6 +21,8 @@ import vouchersRouter from './routes/vouchers.js';
 import { csrfMiddleware, getCsrfToken, regenerateCsrfToken, isAllowedOrigin } from './utils/csrf.js';
 import { requireRole } from './utils/auth.js';
 import { respondWithServerError } from './utils/httpErrors.js';
+import { validateBody } from './utils/validation.js';
+import { z } from 'zod';
 
 dotenv.config();
 
@@ -62,7 +64,7 @@ async function main() {
   // ---------------------------------------------------------------------------
   app.use(cors({
     origin: (origin, callback) => {
-      if (isAllowedOrigin(origin)) {
+      if (isAllowedOrigin(origin, req.method)) {
         callback(null, true);
         return;
       }
@@ -75,7 +77,7 @@ async function main() {
   // ---------------------------------------------------------------------------
   // JSON body parsing
   // ---------------------------------------------------------------------------
-  app.use(express.json());
+  app.use(express.json({ limit: '10kb' }));
 
   // DEBUG: Request logger (nur in Entwicklung)
   if (process.env.NODE_ENV !== 'production') {
@@ -132,6 +134,11 @@ async function main() {
   // Auth routes
   // ---------------------------------------------------------------------------
   // Login rate limiter: 5 attempts per 15 minutes per IP
+  const loginSchema = z.object({
+    username: z.string().min(1).max(100),
+    password: z.string().min(1).max(1000),
+  });
+
   const loginLimiter = rateLimit({
     windowMs: 15 * 60 * 1000,
     max: 5,
@@ -168,7 +175,7 @@ async function main() {
   const smsLimiter = createApiRateLimiter(10, 'Zu viele SMS-Anfragen. Bitte in einer Minute erneut versuchen.');
   const crudLimiter = createApiRateLimiter(60, 'Zu viele Änderungsanfragen. Bitte in einer Minute erneut versuchen.');
 
-  app.post('/api/auth/login', express.json(), loginLimiter, async (req: express.Request, res: express.Response) => {
+  app.post('/api/auth/login', express.json({ limit: '10kb' }), validateBody(loginSchema), loginLimiter, async (req: express.Request, res: express.Response) => {
     const { username, password } = req.body || {};
     const ip = req.ip || req.socket.remoteAddress || 'unknown';
 
@@ -212,14 +219,18 @@ async function main() {
 
     if (!user) {
       logAudit('login-user-not-found', false);
-      res.status(401).json({ success: false, error: 'Ungültige Anmeldedaten', code: 'invalid_credentials' });
+      req.session.regenerate(() => {
+        res.status(401).json({ success: false, error: 'Ungültige Anmeldedaten', code: 'invalid_credentials' });
+      });
       return;
     }
 
     const match = await bcrypt.compare(password, user.password_hash);
     if (!match) {
       logAudit('login-wrong-password', false);
-      res.status(401).json({ success: false, error: 'Ungültige Anmeldedaten', code: 'invalid_credentials' });
+      req.session.regenerate(() => {
+        res.status(401).json({ success: false, error: 'Ungültige Anmeldedaten', code: 'invalid_credentials' });
+      });
       return;
     }
 

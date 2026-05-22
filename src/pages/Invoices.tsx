@@ -297,11 +297,11 @@ export default function Invoices({ initialModal, onModalConsumed }: InvoicesProp
                       </button>
                     ) : null}
                     {invoice.dunning_level > 0 ? (
-                      <button onClick={() => window.open(`/api/invoices/${invoice.id}/dunning-letter.pdf`, '_blank')} className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700 hover:bg-red-100 min-h-[44px]">
+                      <button onClick={() => window.open(`/api/invoices/${invoice.id}/dunning-letter.pdf`, '_blank', 'noopener,noreferrer')} className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700 hover:bg-red-100 min-h-[44px]">
                         Mahnbrief
                       </button>
                     ) : null}
-                    <button onClick={() => window.open(`/api/invoices/${invoice.id}/pdf`, '_blank')} className="rounded-lg bg-slate-100 px-3 py-2 text-sm text-slate-700 hover:bg-slate-200 min-h-[44px]">
+                    <button onClick={() => window.open(`/api/invoices/${invoice.id}/pdf`, '_blank', 'noopener,noreferrer')} className="rounded-lg bg-slate-100 px-3 py-2 text-sm text-slate-700 hover:bg-slate-200 min-h-[44px]">
                       PDF
                     </button>
                     <button
@@ -368,11 +368,11 @@ export default function Invoices({ initialModal, onModalConsumed }: InvoicesProp
                           </button>
                         ) : null}
                         {invoice.dunning_level > 0 ? (
-                          <button onClick={() => window.open(`/api/invoices/${invoice.id}/dunning-letter.pdf`, '_blank')} className="rounded-lg bg-red-50 px-3 py-1.5 text-sm text-red-700 hover:bg-red-100 min-h-[44px]">
+                          <button onClick={() => window.open(`/api/invoices/${invoice.id}/dunning-letter.pdf`, '_blank', 'noopener,noreferrer')} className="rounded-lg bg-red-50 px-3 py-1.5 text-sm text-red-700 hover:bg-red-100 min-h-[44px]">
                             Mahnbrief
                           </button>
                         ) : null}
-                        <button onClick={() => window.open(`/api/invoices/${invoice.id}/pdf`, '_blank')} className="rounded-lg bg-slate-100 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-200 min-h-[44px]">
+                        <button onClick={() => window.open(`/api/invoices/${invoice.id}/pdf`, '_blank', 'noopener,noreferrer')} className="rounded-lg bg-slate-100 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-200 min-h-[44px]">
                           PDF
                         </button>
                         <button
