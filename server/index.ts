@@ -21,6 +21,7 @@ import vouchersRouter from './routes/vouchers.js';
 import { csrfMiddleware, getCsrfToken, regenerateCsrfToken, isAllowedOrigin } from './utils/csrf.js';
 import { requireRole } from './utils/auth.js';
 import { respondWithServerError } from './utils/httpErrors.js';
+import { createSessionStore } from './utils/sqliteSessionStore.js';
 import { validateBody } from './utils/validation.js';
 import { z } from 'zod';
 
@@ -102,6 +103,7 @@ async function main() {
   }
   app.set('trust proxy', 1);
   app.use(session({
+    store: createSessionStore(db),
     secret: SESSION_SECRET,
     resave: false,
     saveUninitialized: false,
