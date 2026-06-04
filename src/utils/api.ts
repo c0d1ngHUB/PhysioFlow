@@ -1,4 +1,4 @@
-import { setOnAuthFailure } from '../auth';
+import { notifyAuthFailure } from '../authFailure.js';
 
 let cachedCsrfToken: string | null = null;
 let csrfPromise: Promise<string | null> | null = null;
@@ -34,19 +34,6 @@ export function clearCsrfToken() {
   csrfPromise = null;
 }
 
-// 401 handler — triggers auth failure callback
-let authFailureHandled = false;
-
-setOnAuthFailure(() => {
-  if (authFailureHandled) return;
-  authFailureHandled = true;
-  // Re-export will be handled by auth.tsx AuthProvider
-});
-
-export function resetAuthFailureState() {
-  authFailureHandled = false;
-}
-
 export async function apiFetch(
   input: RequestInfo | URL,
   init?: RequestInit,
@@ -75,9 +62,7 @@ export async function apiFetch(
   if (res.status === 401) {
     const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
     if (!url.includes('/api/auth/login') && !url.includes('/api/auth/check') && !url.includes('/api/auth/logout')) {
-      // Trigger auth failure via imported callback
-      const { onAuthFailure } = await import('../auth');
-      onAuthFailure?.();
+      notifyAuthFailure();
     }
   }
 

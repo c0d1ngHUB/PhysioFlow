@@ -3,6 +3,7 @@ import type { ReactNode } from 'react';
 import { showToast } from './components/ui';
 import { useNavigation, type Page } from './navigation';
 import { apiFetch, getCsrfToken, clearCsrfToken } from './utils/api.js';
+import { setOnAuthFailure } from './authFailure.js';
 
 export interface AuthUser {
   username: string;
@@ -39,22 +40,6 @@ export const AuthContext = createContext<AuthContextType>({
 
 export function useAuth() {
   return useContext(AuthContext);
-}
-
-export let onAuthFailure: (() => void) | null = null;
-
-export function setOnAuthFailure(handler: (() => void) | null) {
-  onAuthFailure = handler;
-}
-
-function shouldSkipAuthFailure(url: string) {
-  return url.includes('/api/auth/login') || url.includes('/api/auth/check') || url.includes('/api/auth/logout');
-}
-
-function getRequestUrl(input: Parameters<typeof fetch>[0]) {
-  if (typeof input === 'string') return input;
-  if (input instanceof Request) return input.url;
-  return String(input);
 }
 
 function savePendingRoute() {

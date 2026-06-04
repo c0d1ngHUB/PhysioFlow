@@ -50,5 +50,8 @@
     "@types/react-dom": "^19.2.3",
     "concurrently": "^9.2.1",
     "tsx": "^4.21.0"
+  },
+  "overrides": {
+    "@rushstack/node-core-library": "^5.23.1"
   }
 }

@@ -64,7 +64,10 @@ async function main() {
   // ---------------------------------------------------------------------------
   app.use(cors({
     origin: (origin, callback) => {
-      if (isAllowedOrigin(origin, req.method)) {
+      // The cors origin callback does not receive the Request object, so it
+      // cannot make method-aware decisions. Mutation requests are still
+      // protected by csrfMiddleware, which validates both Origin and method.
+      if (isAllowedOrigin(origin)) {
         callback(null, true);
         return;
       }
