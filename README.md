@@ -49,11 +49,20 @@ cd /home/m3kky/PhysioFlow
 npm install
 ```
 
-### 2. Datenbank initialisieren
+### 2. Environment konfigurieren
+
+```bash
+cp .env.example .env
+```
+
+Trage anschließend `SESSION_SECRET`, `PHYSIOFLOW_PASSWORD` und optional `SMS77_API_KEY` ein.
+`NODE_ENV` gehört bewusst nicht in die Projekt-`.env`, weil Vite diese Datei beim Build liest. Setze `NODE_ENV=production` nur in der Runtime-Umgebung, z.B. in `/home/h3m3s/docker/physioflow/app.env`.
+
+### 3. Datenbank initialisieren
 
 Die SQLite-Datenbank wird automatisch beim ersten Start erstellt unter `data/physioflow.db`.
 
-### 3. Development Server starten
+### 4. Development Server starten
 
 ```bash
 npm start
@@ -69,7 +78,7 @@ npm run dev          # Nur Frontend
 npx tsx server/index.ts  # Nur Backend
 ```
 
-### 4. Öffnen
+### 5. Öffnen
 
 Browser: http://localhost:5173
 
