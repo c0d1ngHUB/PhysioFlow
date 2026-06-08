@@ -221,7 +221,7 @@ export default function Invoices({ initialModal, onModalConsumed }: InvoicesProp
             <p className="text-sm font-medium uppercase tracking-wide text-slate-500">Finanzen</p>
             <h2 className="mt-1 text-2xl font-semibold text-slate-900">Honorarnoten und Mahnwesen</h2>
             <p className="mt-2 text-sm text-slate-600">
-              {invoices.length} Honorarnoten, davon {unpaidInvoices.length} offen
+              {invoices.length === 1 ? '1 Honorarnote' : invoices.length + ' Honorarnoten'}, davon {unpaidInvoices.length} offen
             </p>
           </div>
           <button onClick={() => setShowModal(true)} className="rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-medium text-white hover:bg-blue-700">
@@ -234,7 +234,7 @@ export default function Invoices({ initialModal, onModalConsumed }: InvoicesProp
         <div className="rounded-2xl border border-amber-200 bg-white p-5 shadow-sm">
           <p className="text-sm font-medium text-slate-500">Offener Betrag</p>
           <p className="mt-2 text-3xl font-semibold text-amber-700">{formatCurrency(openAmount)}</p>
-          <p className="mt-1 text-xs text-slate-500">{unpaidInvoices.length} offene Honorarnoten</p>
+          <p className="mt-1 text-xs text-slate-500">{unpaidInvoices.length === 1 ? '1 offene Honorarnote' : unpaidInvoices.length + ' offene Honorarnoten'}</p>
         </div>
         <div className="rounded-2xl border border-emerald-200 bg-white p-5 shadow-sm">
           <p className="text-sm font-medium text-slate-500">Bezahlt im aktuellen Monat</p>

@@ -48,13 +48,13 @@ async function main() {
         fontSrc: ["'self'", "https://fonts.gstatic.com"],
         objectSrc: ["'none'"],
         frameAncestors: ["'none'"],
-        upgradeInsecureRequests: [],
+        upgradeInsecureRequests: null,
       },
     },
     hsts: {
-      maxAge: 31536000,
-      includeSubDomains: true,
-      preload: true,
+      maxAge: 0,
+      includeSubDomains: false,
+      preload: false,
     },
     xFrameOptions: { action: 'deny' },
     referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
@@ -222,17 +222,14 @@ async function main() {
     const user = db.prepare('SELECT id, username, password_hash, role FROM users WHERE username = ?')
       .get(username) as { id: number; username: string; password_hash: string; role: string } | undefined;
 
-    if (!user) {
-      logAudit('login-user-not-found', false);
-      req.session.regenerate(() => {
-        res.status(401).json({ success: false, error: 'Ungültige Anmeldedaten', code: 'invalid_credentials' });
-      });
-      return;
-    }
+    // Timing-safe: sempre bcrypt.compare ausfuehren, auch bei nicht-
+    // existierendem User. Verhindert Username-Enumeration per Timing-Analyse.
+    const hashToCompare = user?.password_hash ?? '$2b$12$dummyhashdummyhashdummyhashdumy';
+    const match = await bcrypt.compare(password, hashToCompare);
 
-    const match = await bcrypt.compare(password, user.password_hash);
-    if (!match) {
-      logAudit('login-wrong-password', false);
+    if (!user || !match) {
+      const auditAction = !user ? 'login-user-not-found' : 'login-wrong-password';
+      logAudit(auditAction, false);
       req.session.regenerate(() => {
         res.status(401).json({ success: false, error: 'Ungültige Anmeldedaten', code: 'invalid_credentials' });
       });
@@ -306,7 +303,7 @@ async function main() {
     const distPath = path.resolve(process.cwd(), 'dist');
     console.log(`📁 Serving static files from: ${distPath}`);
     app.use(express.static(distPath));
-    app.get(/.*/, (_req: express.Request, res: express.Response) => {
+    app.get(/^\/(?!api).*/, (_req: express.Request, res: express.Response) => {
       res.sendFile(path.join(distPath, 'index.html'));
     });
   }
