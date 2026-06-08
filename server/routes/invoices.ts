@@ -403,9 +403,9 @@ router.put('/:id/paid', requireRole('admin'), (req, res) => {
     const result = db.prepare(`
       UPDATE invoices
       SET paid = ?, dunning_level = CASE WHEN ? = 1 THEN 0 ELSE dunning_level END,
-          dunning_date = CASE WHEN ? = 1 THEN NULL ELSE dunning_date END
+          dunning_date = CASE WHEN ? = 1 THEN NULL ELSE dunning_date END, paid_at = CASE WHEN ? = 1 THEN datetime('now') ELSE NULL END
       WHERE id = ?
-    `).run(paid ? 1 : 0, paid ? 1 : 0, paid ? 1 : 0, req.params.id);
+    `).run(paid ? 1 : 0, paid ? 1 : 0, paid ? 1 : 0, paid ? 1 : 0, req.params.id);
 
     if (result.changes === 0) {
       return res.status(404).json({ success: false, error: 'Honorarnote nicht gefunden' });

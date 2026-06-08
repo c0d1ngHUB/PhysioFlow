@@ -40,20 +40,20 @@ router.get('/', (req, res) => {
 
     const revenue = db.prepare(`
       SELECT
-        COALESCE(SUM(CASE WHEN created_at >= ? THEN total ELSE 0 END), 0) AS this_month,
-        COALESCE(SUM(CASE WHEN created_at >= ? AND created_at < ? THEN total ELSE 0 END), 0) AS last_month
+        COALESCE(SUM(CASE WHEN paid_at >= ? THEN total ELSE 0 END), 0) AS this_month,
+        COALESCE(SUM(CASE WHEN paid_at >= ? AND paid_at < ? THEN total ELSE 0 END), 0) AS last_month
       FROM invoices
-      WHERE paid = 1
+      WHERE paid = 1 AND paid_at IS NOT NULL
     `).get(thisMonthStart, lastMonthStart, thisMonthStart) as { this_month: number; last_month: number };
 
     const sixMonthsRows = db.prepare(`
       SELECT
-        strftime('%Y-%m', created_at) AS month,
+        strftime('%Y-%m', paid_at) AS month,
         COALESCE(SUM(total), 0) AS revenue
       FROM invoices
-      WHERE paid = 1
-        AND created_at >= date('now', '-5 months', 'start of month')
-      GROUP BY strftime('%Y-%m', created_at)
+      WHERE paid = 1 AND paid_at IS NOT NULL
+        AND paid_at >= date('now', '-5 months', 'start of month')
+      GROUP BY strftime('%Y-%m', paid_at)
       ORDER BY month ASC
     `).all() as { month: string; revenue: number }[];
 
