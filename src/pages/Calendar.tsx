@@ -364,28 +364,31 @@ export default function Calendar({ openCreateModal = false, onCreateModalOpened 
       {/* Day View - Time Slots */}
       {viewMode === 'day' && (
         <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
-          <div className="divide-y divide-gray-200">
+          <div className="divide-y divide-gray-100">
             {timeSlots.map((time) => {
               const apt = getAppointmentForSlot(time);
               const isStart = apt?.time_start === time;
+              const isHour = time.endsWith(':00');
+              const isOccupied = apt && !isStart;
               
               return (
-                <div key={time} className="flex min-h-[60px]">
-                  <div className="w-20 flex-shrink-0 border-r border-gray-200 bg-gray-50 p-2 text-right">
-                    <span className="font-mono text-sm text-text-secondary">{time}</span>
+                <div key={time} className={`flex ${isHour ? 'min-h-[52px]' : 'min-h-[40px]'} ${isOccupied ? 'bg-blue-50/40' : ''}`}>
+                  <div className={`w-16 flex-shrink-0 pr-3 text-right flex items-start ${isHour ? 'pt-2.5' : 'pt-1.5'}`}>
+                    {isHour && (
+                      <span className="font-mono text-xs font-semibold text-slate-500">{time}</span>
+                    )}
                   </div>
-                  <div className="flex-1 p-2">
+                  <div className={`flex-1 ${isHour ? 'py-2' : 'py-1'} pr-3 ${isHour ? 'border-t border-slate-200' : 'border-t border-slate-100'}`}>
                     {apt ? (
                       isStart ? (
-                        <div className="border-l-4 border-primary bg-blue-50 p-3 rounded-r-lg">
-                          <div className="flex justify-between items-start">
-                            <div>
-                              <p className="font-medium text-text-primary">{apt.patient_name}</p>
-                              <p className="text-sm text-text-secondary">{apt.treatment_type}</p>
-                              {apt.notes && <p className="text-xs text-text-secondary mt-1">{apt.notes}</p>}
+                        <div className="border-l-4 border-primary bg-blue-50 px-3 py-2 rounded-r-lg">
+                          <div className="flex justify-between items-center gap-2">
+                            <div className="min-w-0">
+                              <p className="font-medium text-slate-900 truncate">{apt.patient_name}</p>
+                              <p className="text-sm text-slate-500">{apt.treatment_type}</p>
                             </div>
-                            <div className="flex items-center gap-2">
-                              <span className="font-mono text-sm text-primary">{apt.time_start} - {apt.time_end}</span>
+                            <div className="flex items-center gap-1.5 flex-shrink-0">
+                              <span className="font-mono text-xs text-primary">{apt.time_start}–{apt.time_end}</span>
                               {apt.sms_reminder === 1 && <span className="text-green-500" title="SMS aktiv">✓</span>}
                               <Button
                                 onClick={() => openTreatmentModal(apt)}
@@ -410,16 +413,16 @@ export default function Calendar({ openCreateModal = false, onCreateModalOpened 
                               </Button>
                             </div>
                           </div>
+                          {apt.notes && <p className="text-xs text-slate-400 mt-1 truncate">{apt.notes}</p>}
                         </div>
                       ) : null
                     ) : (
-                      <Button
+                      <button
                         onClick={() => { setFormData({ ...formData, date: selectedDate, time_start: time }); openModal(); }}
-                        variant="ghost"
-                        className="h-full min-h-[44px] w-full justify-start rounded-xl border-2 border-dashed border-gray-200 px-3 text-left text-text-secondary hover:border-primary/50 hover:bg-blue-50 hover:text-primary"
+                        className="group w-full text-left rounded-lg px-3 py-1 text-xs text-slate-300 transition-colors hover:bg-slate-50 hover:text-primary"
                       >
-                        + Termin
-                      </Button>
+                        {isHour ? '+ Termin' : ''}
+                      </button>
                     )}
                   </div>
                 </div>

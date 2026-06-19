@@ -27,7 +27,8 @@ export interface Appointment {
   treatment_services?: string | string[];
   next_appointment_date?: string;
   treatment_completed_at?: string;
-  sms_reminder: 0 | 1 | 2; // 0=kein SMS, 1=gesendet, 2=geplant
+  status?: 'confirmed' | 'cancelled';
+  sms_reminder: 0 | 1 | 2 | 3; // 0=kein SMS, 1=gesendet, 2=geplant, 3=fehlgeschlagen
   created_at?: string;
   // Joined fields (always present from API)
   patient_name: string;

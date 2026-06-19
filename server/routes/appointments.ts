@@ -3,9 +3,16 @@ import db from '../db/index.js';
 
 const router = Router();
 
+function shouldIncludeCancelled(query: Record<string, unknown>) {
+  return query.include_cancelled === 'true' ||
+    query.includeCancelled === 'true' ||
+    query.status === 'all';
+}
+
 // Get all appointments (with optional date/week/month filter)
 router.get('/', (req, res) => {
   const { date, patient_id, view } = req.query;
+  const includeCancelled = shouldIncludeCancelled(req.query as Record<string, unknown>);
 
   let query = `
     SELECT a.*, p.first_name || ' ' || p.last_name as patient_name, p.phone as patient_phone
@@ -14,6 +21,10 @@ router.get('/', (req, res) => {
     WHERE 1=1
   `;
   const params: any[] = [];
+
+  if (!includeCancelled) {
+    query += " AND a.status != 'cancelled'";
+  }
 
   if (date && !view) {
     // Legacy: single date filter (backward compat)
@@ -63,11 +74,12 @@ router.get('/', (req, res) => {
 // Get single appointment
 router.get('/:id', (req, res) => {
   try {
+    const includeCancelled = shouldIncludeCancelled(req.query as Record<string, unknown>);
     const appointment = db.prepare(`
       SELECT a.*, p.first_name || ' ' || p.last_name as patient_name, p.phone as patient_phone
       FROM appointments a
       JOIN patients p ON a.patient_id = p.id
-      WHERE a.id = ?
+      WHERE a.id = ?${includeCancelled ? '' : " AND a.status != 'cancelled'"}
     `).get(req.params.id);
     
     if (!appointment) {
@@ -195,7 +207,11 @@ router.put('/:id/treatment', (req, res) => {
 // Delete appointment
 router.delete('/:id', (req, res) => {
   try {
-    const result = db.prepare('DELETE FROM appointments WHERE id = ?').run(req.params.id);
+    const result = db.prepare(`
+      UPDATE appointments
+      SET status = 'cancelled'
+      WHERE id = ? AND status != 'cancelled'
+    `).run(req.params.id);
     if (result.changes === 0) {
       return res.status(404).json({ success: false, error: 'Termin nicht gefunden' });
     }
@@ -208,7 +224,11 @@ router.delete('/:id', (req, res) => {
 // Cancel appointment (frontend compatibility)
 router.post('/:id/cancel', (req, res) => {
   try {
-    const result = db.prepare('DELETE FROM appointments WHERE id = ?').run(req.params.id);
+    const result = db.prepare(`
+      UPDATE appointments
+      SET status = 'cancelled'
+      WHERE id = ? AND status != 'cancelled'
+    `).run(req.params.id);
     if (result.changes === 0) {
       return res.status(404).json({ success: false, error: 'Termin nicht gefunden' });
     }

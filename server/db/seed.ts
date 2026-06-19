@@ -1,4 +1,11 @@
-import db from './index.js';
+if (process.env.NODE_ENV === 'production') {
+  console.error('Seed script cannot run in production');
+  process.exit(1);
+}
+
+const { default: db } = await import('./index.js');
+
+export {};
 
 // Clear existing data
 db.exec('DELETE FROM sms_log');

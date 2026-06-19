@@ -43,6 +43,12 @@ function parseTreatmentServices(rawValue: unknown) {
   }
 }
 
+function shouldIncludeCancelled(query: Record<string, unknown>) {
+  return query.include_cancelled === 'true' ||
+    query.includeCancelled === 'true' ||
+    query.status === 'all';
+}
+
 // Get all patients
 router.get('/', (req, res) => {
   try {
@@ -67,9 +73,10 @@ router.get('/', (req, res) => {
 // Export patient as JSON
 router.get('/:id/export', (req, res) => {
   const { id } = req.params;
+  const includeCancelled = shouldIncludeCancelled(req.query as Record<string, unknown>);
 
   try {
-    const patient = db.prepare(`${PATIENT_SELECT} WHERE id = ?`).get(id);
+    const patient = db.prepare(`${PATIENT_SELECT} WHERE id = ?`).get(id) as any;
     if (!patient) {
       return res.status(404).json({ success: false, error: 'Patient nicht gefunden' });
     }
@@ -77,7 +84,7 @@ router.get('/:id/export', (req, res) => {
     const appointments = db.prepare(`
       SELECT *
       FROM appointments
-      WHERE patient_id = ?
+      WHERE patient_id = ?${includeCancelled ? '' : " AND status != 'cancelled'"}
       ORDER BY date DESC, time_start DESC
     `).all(id).map((appointment: any) => ({
       ...appointment,
@@ -258,6 +265,7 @@ router.delete('/:id', (req, res) => {
 // Get patient history (appointments + invoices)
 router.get('/:id/history', (req, res) => {
   const { id } = req.params;
+  const includeCancelled = shouldIncludeCancelled(req.query as Record<string, unknown>);
 
   try {
     // Patient details
@@ -269,7 +277,7 @@ router.get('/:id/history', (req, res) => {
     // Appointments for this patient
     const appointments = db.prepare(`
       SELECT * FROM appointments
-      WHERE patient_id = ?
+      WHERE patient_id = ?${includeCancelled ? '' : " AND status != 'cancelled'"}
       ORDER BY date DESC, time_start DESC
     `).all(id).map((appointment: any) => ({
       ...appointment,

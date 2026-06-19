@@ -332,7 +332,7 @@ export default function Patients({ openCreateModal = false, onCreateModalOpened 
     return (
       <div
         key={patient.id}
-        className={`rounded-2xl border p-5 transition-all cursor-pointer ${
+        className={`rounded-xl border p-4 transition-all cursor-pointer ${
           patient.is_archived
             ? 'border-slate-200 bg-slate-50/80 hover:border-slate-300'
             : 'border-gray-200 bg-white hover:border-blue-300 hover:shadow-md'
@@ -340,7 +340,7 @@ export default function Patients({ openCreateModal = false, onCreateModalOpened 
         onClick={() => openModal(patient)}
       >
         <div className="flex items-start gap-4">
-          <div className={`w-14 h-14 rounded-xl flex items-center justify-center text-lg font-bold ${getAvatarColor(patient)}`}>
+          <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-base font-bold ${getAvatarColor(patient)}`}>
             {getPatientInitials(patient)}
           </div>
 
@@ -359,19 +359,16 @@ export default function Patients({ openCreateModal = false, onCreateModalOpened 
             <div className="mt-2 space-y-1 text-sm text-gray-500">
               {patient.phone && (
                 <div className="flex items-center gap-2">
-                  <span>📱</span>
                   <span className="truncate">{patient.phone}</span>
                 </div>
               )}
               {patient.email && (
                 <div className="flex items-center gap-2">
-                  <span>✉️</span>
                   <span className="truncate">{patient.email}</span>
                 </div>
               )}
               {patient.birthdate && (
                 <div className="flex items-center gap-2">
-                  <span>🎂</span>
                   <span>{new Date(patient.birthdate).toLocaleDateString('de-AT')}</span>
                 </div>
               )}
@@ -516,12 +513,12 @@ export default function Patients({ openCreateModal = false, onCreateModalOpened 
             <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400">🔍</span>
           </div>
 
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap gap-1.5">
             <Button
               onClick={() => setStatusFilter('active')}
               size="sm"
               variant={statusFilter === 'active' ? 'primary' : 'outline'}
-              className={`${
+              className={`text-xs py-1.5 px-3 h-auto ${
                 statusFilter === 'active' ? '' : 'text-gray-600'
               }`}
             >
@@ -531,7 +528,7 @@ export default function Patients({ openCreateModal = false, onCreateModalOpened 
               onClick={() => setStatusFilter('all')}
               size="sm"
               variant={statusFilter === 'all' ? 'primary' : 'outline'}
-              className={`${
+              className={`text-xs py-1.5 px-3 h-auto ${
                 statusFilter === 'all' ? 'bg-slate-800 hover:bg-slate-700' : 'text-gray-600'
               }`}
             >
@@ -541,7 +538,7 @@ export default function Patients({ openCreateModal = false, onCreateModalOpened 
               onClick={() => setStatusFilter('archived')}
               size="sm"
               variant={statusFilter === 'archived' ? 'outline' : 'outline'}
-              className={`${
+              className={`text-xs py-1.5 px-3 h-auto ${
                 statusFilter === 'archived'
                   ? 'border-amber-600 bg-amber-600 text-white hover:bg-amber-700 hover:text-white'
                   : 'text-gray-600'

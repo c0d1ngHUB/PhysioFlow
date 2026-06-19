@@ -29,7 +29,7 @@ const monoFormControlClassName = `${formControlClassName} font-mono`;
 
 export default function Expenses() {
   const [expenses, setExpenses] = useState<Expense[]>([]);
-  const [totals, setTotals] = useState({ all: 0, thisMonth: 0 });
+  const [_totals, setTotals] = useState({ all: 0, thisMonth: 0 });
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [expenseToDelete, setExpenseToDelete] = useState<Expense | null>(null);
@@ -152,29 +152,13 @@ export default function Expenses() {
         }
       />
 
-      {/* Stats Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
-          <p className="text-sm text-gray-500 font-medium">Gesamt (alle Zeit)</p>
-          <p className="text-3xl font-semibold text-red-600 mt-1">{formatCurrency(totals.all)}</p>
-        </div>
-        <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
-          <p className="text-sm text-gray-500 font-medium">Dieser Monat</p>
-          <p className="text-3xl font-semibold text-orange-600 mt-1">{formatCurrency(totals.thisMonth)}</p>
-        </div>
-        <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
-          <p className="text-sm text-gray-500 font-medium">Anzahl Einträge</p>
-          <p className="text-3xl font-semibold text-gray-600 mt-1">{expenses.length}</p>
-        </div>
-      </div>
-
       {/* Filter */}
-      <div className="flex flex-wrap gap-2">
-        <Button size="sm" variant={!filterCategory ? 'primary' : 'outline'} onClick={() => setFilterCategory('')}>
+      <div className="flex flex-wrap gap-1.5">
+        <Button size="sm" variant={!filterCategory ? 'primary' : 'outline'} onClick={() => setFilterCategory('')} className="text-xs py-1.5 px-3 h-auto">
           Alle
         </Button>
         {EXPENSE_CATEGORIES.slice(0, 6).map(cat => (
-          <Button key={cat} size="sm" variant={filterCategory === cat ? 'primary' : 'outline'} onClick={() => setFilterCategory(cat === filterCategory ? '' : cat)}>
+          <Button key={cat} size="sm" variant={filterCategory === cat ? 'primary' : 'outline'} onClick={() => setFilterCategory(cat === filterCategory ? '' : cat)} className="text-xs py-1.5 px-3 h-auto">
             {cat}
           </Button>
         ))}

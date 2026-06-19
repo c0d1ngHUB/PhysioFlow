@@ -3,9 +3,33 @@ import db from '../db/index.js';
 
 const router = Router();
 
-// SMS77.de API configuration
+// SMS77.de/seven.io API configuration
 const SMS77_API_KEY = process.env.SMS77_API_KEY || '';
-const SMS77_URL = 'https://rest.sms77.de/api';
+const SMS77_URL = process.env.SMS77_URL || 'https://gateway.seven.io/api';
+
+async function sendSms(to: string, text: string) {
+  const response = await fetch(`${SMS77_URL}/sms`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${SMS77_API_KEY}`,
+      'X-Api-Key': SMS77_API_KEY,
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+    },
+    body: JSON.stringify({
+      to,
+      text,
+      from: 'PhysioFlow',
+    }),
+  });
+
+  const responseText = await response.text();
+  if (!response.ok) {
+    throw new Error(responseText);
+  }
+
+  return responseText;
+}
 
 // Send SMS reminder
 router.post('/send', async (req, res) => {
@@ -60,41 +84,23 @@ router.post('/send', async (req, res) => {
   }
   
   try {
-    const params = new URLSearchParams({
-      p: SMS77_API_KEY,
-      to: phone,
-      text: message,
-      from: 'PhysioFlow'
+    const result = await sendSms(phone, message);
+
+    res.json({
+      success: true,
+      data: {
+        id: result,
+        to: phone,
+        message,
+        status: 'sent'
+      }
     });
-    
-    const response = await fetch(`${SMS77_URL}/sms?${params}`, {
-      method: 'GET'
-    });
-    
-    const result = await response.text();
-    
-    if (response.ok) {
-      res.json({ 
-        success: true, 
-        data: { 
-          id: result,
-          to: phone,
-          message,
-          status: 'sent'
-        }
-      });
-    } else {
-      res.status(400).json({ 
-        success: false, 
-        error: 'SMS konnte nicht gesendet werden',
-        details: result
-      });
-    }
   } catch (error) {
     console.error('SMS Error:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: 'Fehler beim Senden der SMS'
+    res.status(400).json({
+      success: false,
+      error: 'SMS konnte nicht gesendet werden',
+      details: (error as Error).message
     });
   }
 });
@@ -116,7 +122,7 @@ router.post('/schedule', (req, res) => {
       SELECT a.*, p.first_name || ' ' || p.last_name as patient_name, p.phone as patient_phone
       FROM appointments a
       JOIN patients p ON a.patient_id = p.id
-      WHERE a.id = ?
+      WHERE a.id = ? AND a.status != 'cancelled'
     `).get(appointment_id) as any;
     
     if (!appointment) {

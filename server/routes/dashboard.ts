@@ -10,7 +10,7 @@ router.get('/', (_req, res) => {
     
     // Today's appointments
     const todayAppointments = db.prepare(`
-      SELECT COUNT(*) as count FROM appointments WHERE date = ?
+      SELECT COUNT(*) as count FROM appointments WHERE date = ? AND status != 'cancelled'
     `).get(today) as { count: number };
     
     // Upcoming appointments (next 7 days)
@@ -20,7 +20,7 @@ router.get('/', (_req, res) => {
     
     const upcomingAppointments = db.prepare(`
       SELECT COUNT(*) as count FROM appointments 
-      WHERE date >= ? AND date <= ? AND date != ?
+      WHERE date >= ? AND date <= ? AND date != ? AND status != 'cancelled'
     `).get(today, weekFromNowStr, today) as { count: number };
     
     // Unpaid invoices
@@ -38,14 +38,14 @@ router.get('/', (_req, res) => {
       SELECT a.*, p.first_name || ' ' || p.last_name as patient_name
       FROM appointments a
       JOIN patients p ON a.patient_id = p.id
-      WHERE a.date = ?
+      WHERE a.date = ? AND a.status != 'cancelled'
       ORDER BY a.time_start
     `).all(today);
 
     // This month appointments
     const thisMonthStart = today.slice(0, 7) + '-01';
     const thisMonthAppointments = db.prepare(`
-      SELECT COUNT(*) as count FROM appointments WHERE date >= ? AND date <= ?
+      SELECT COUNT(*) as count FROM appointments WHERE date >= ? AND date <= ? AND status != 'cancelled'
     `).get(thisMonthStart, today) as { count: number };
 
     // Upcoming this week (next 7 days including today)
@@ -56,7 +56,7 @@ router.get('/', (_req, res) => {
       SELECT a.*, p.first_name || ' ' || p.last_name as patient_name
       FROM appointments a
       JOIN patients p ON a.patient_id = p.id
-      WHERE a.date >= ? AND a.date <= ?
+      WHERE a.date >= ? AND a.date <= ? AND a.status != 'cancelled'
       ORDER BY a.date, a.time_start
     `).all(weekStartStr, weekFromNowStr);
 

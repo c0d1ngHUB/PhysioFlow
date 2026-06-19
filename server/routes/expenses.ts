@@ -105,7 +105,7 @@ router.put('/:id', (req, res) => {
     const { id } = req.params;
     const { category, description, amount, date, receipt_path } = req.body;
     
-    db.prepare(`
+    const result = db.prepare(`
       UPDATE expenses 
       SET category = COALESCE(?, category),
           description = COALESCE(?, description),
@@ -114,13 +114,15 @@ router.put('/:id', (req, res) => {
           receipt_path = COALESCE(?, receipt_path)
       WHERE id = ?
     `).run(category, description, amount, date, receipt_path, id);
-    
-    const expense = db.prepare('SELECT * FROM expenses WHERE id = ?').get(id);
-    
-    if (!expense) {
-      return res.status(404).json({ success: false, error: 'Ausgabe nicht gefunden' });
+
+    if (result.changes === 0) {
+      const existing = db.prepare('SELECT id FROM expenses WHERE id = ?').get(id);
+      if (!existing) {
+        return res.status(404).json({ success: false, error: 'Ausgabe nicht gefunden' });
+      }
     }
     
+    const expense = db.prepare('SELECT * FROM expenses WHERE id = ?').get(id);
     res.json({ success: true, data: expense });
   } catch (error) {
     res.status(500).json({ success: false, error: 'Failed to update expense' });
@@ -131,7 +133,10 @@ router.put('/:id', (req, res) => {
 router.delete('/:id', (req, res) => {
   try {
     const { id } = req.params;
-    db.prepare('DELETE FROM expenses WHERE id = ?').run(id);
+    const result = db.prepare('DELETE FROM expenses WHERE id = ?').run(id);
+    if (result.changes === 0) {
+      return res.status(404).json({ success: false, error: 'Ausgabe nicht gefunden' });
+    }
     res.json({ success: true });
   } catch (error) {
     res.status(500).json({ success: false, error: 'Failed to delete expense' });

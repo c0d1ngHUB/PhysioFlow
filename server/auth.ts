@@ -2,10 +2,29 @@ import crypto from 'crypto';
 import type { Request, Response, NextFunction } from 'express';
 
 const COOKIE_NAME = 'physioflow_session';
-const SESSION_TTL_MS = 1000 * 60 * 60 * 12; // 12h
 
 function getSecret() {
-  return process.env.SESSION_SECRET || 'physioflow-dev-secret-change-me';
+  const secret = process.env.SESSION_SECRET;
+  if (!secret && process.env.NODE_ENV === 'production') {
+    throw new Error('SESSION_SECRET muss in Produktion gesetzt sein');
+  }
+  return secret || 'physioflow-dev-secret-change-me';
+}
+
+export function validateAuthConfig() {
+  getSecret();
+}
+
+function getSessionTtlMs() {
+  const ttlHours = Number(process.env.SESSION_TTL_HOURS || 12);
+  const safeTtlHours = Number.isFinite(ttlHours) && ttlHours > 0 ? ttlHours : 12;
+  return safeTtlHours * 60 * 60 * 1000;
+}
+
+function timingSafeStringEqual(a: string, b: string) {
+  const aHash = crypto.createHash('sha256').update(a, 'utf8').digest();
+  const bHash = crypto.createHash('sha256').update(b, 'utf8').digest();
+  return crypto.timingSafeEqual(aHash, bHash);
 }
 
 function sign(value: string) {
@@ -13,7 +32,7 @@ function sign(value: string) {
 }
 
 function encodeSession(username: string) {
-  const payload = JSON.stringify({ username, exp: Date.now() + SESSION_TTL_MS });
+  const payload = JSON.stringify({ username, exp: Date.now() + getSessionTtlMs() });
   const base = Buffer.from(payload, 'utf8').toString('base64url');
   return `${base}.${sign(base)}`;
 }
@@ -22,7 +41,7 @@ function decodeSession(token?: string | null): { username: string; exp: number }
   if (!token) return null;
   const [base, sig] = token.split('.');
   if (!base || !sig) return null;
-  if (sign(base) !== sig) return null;
+  if (!timingSafeStringEqual(sign(base), sig)) return null;
 
   try {
     const payload = JSON.parse(Buffer.from(base, 'base64url').toString('utf8')) as { username: string; exp: number };
@@ -55,7 +74,7 @@ export function getAuthenticatedUser(req: Request) {
 export function setSessionCookie(res: Response, username: string) {
   const token = encodeSession(username);
   const secure = process.env.NODE_ENV === 'production';
-  res.setHeader('Set-Cookie', `${COOKIE_NAME}=${token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${SESSION_TTL_MS / 1000}${secure ? '; Secure' : ''}`);
+  res.setHeader('Set-Cookie', `${COOKIE_NAME}=${token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${getSessionTtlMs() / 1000}${secure ? '; Secure' : ''}`);
 }
 
 export function clearSessionCookie(res: Response) {
@@ -76,7 +95,12 @@ export function validateAdminCredentials(username?: string, password?: string) {
     return { ok: false, reason: 'Admin-Passwort ist auf dem Server nicht gesetzt' };
   }
 
-  if (username !== expectedUser || password !== expectedPass) {
+  // Environment passwords are still plaintext here for backwards compatibility.
+  // Use bcrypt or argon2 password hashes for production deployments.
+  const userMatches = timingSafeStringEqual(String(username || '').toLocaleLowerCase(), expectedUser.toLocaleLowerCase());
+  const passwordMatches = timingSafeStringEqual(String(password || ''), expectedPass);
+
+  if (!userMatches || !passwordMatches) {
     return { ok: false, reason: 'Benutzername oder Passwort falsch' };
   }
 

@@ -2,7 +2,7 @@
 import db from '../db/index.js';
 
 const SMS77_API_KEY = process.env.SMS77_API_KEY || '';
-const SMS77_URL = 'https://rest.sms77.de/api';
+const SMS77_URL = process.env.SMS77_URL || 'https://gateway.seven.io/api';
 
 interface ScheduledSMS {
   id: number;
@@ -34,6 +34,7 @@ export async function processScheduledSMS(): Promise<{ sent: number; failed: num
     FROM appointments a
     JOIN patients p ON a.patient_id = p.id
     WHERE a.sms_reminder = 2
+      AND a.status != 'cancelled'
       AND a.date || 'T' || a.time_start > datetime('now')
       AND a.date || 'T' || a.time_start <= datetime('now', '+24 hours')
       AND p.phone IS NOT NULL
@@ -97,14 +98,20 @@ async function sendSMSReminder(sms: ScheduledSMS): Promise<void> {
     return; // Simulated success
   }
   
-  const params = new URLSearchParams({
-    p: SMS77_API_KEY,
-    to: phone,
-    text: message,
-    from: 'PhysioFlow'
+  const response = await fetch(`${SMS77_URL}/sms`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${SMS77_API_KEY}`,
+      'X-Api-Key': SMS77_API_KEY,
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+    },
+    body: JSON.stringify({
+      to: phone,
+      text: message,
+      from: 'PhysioFlow',
+    }),
   });
-  
-  const response = await fetch(`${SMS77_URL}/sms?${params}`, { method: 'GET' });
   const result = await response.text();
   
   if (!response.ok) {
@@ -142,7 +149,7 @@ export async function sendManualSMS(appointmentId: number): Promise<{ success: b
       a.time_start as appointment_time
     FROM appointments a
     JOIN patients p ON a.patient_id = p.id
-    WHERE a.id = ?
+    WHERE a.id = ? AND a.status != 'cancelled'
   `).get(appointmentId) as ScheduledSMS | undefined;
   
   if (!appointment) {

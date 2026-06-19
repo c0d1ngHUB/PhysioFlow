@@ -9,16 +9,48 @@ const router = Router();
 function generateInvoiceNumber(): string {
   const today = new Date();
   const dateStr = today.toISOString().slice(0, 10).replace(/-/g, '');
-  
-  // Get count of invoices today
-  const todayInvoices = db.prepare(`
-    SELECT COUNT(*) as count FROM invoices 
-    WHERE invoice_number LIKE ?
-  `).get(`RF-${dateStr}%`) as { count: number };
-  
-  const sequence = String(todayInvoices.count + 1).padStart(3, '0');
+
+  db.prepare('INSERT OR IGNORE INTO invoice_sequences (date_key, last_sequence) VALUES (?, 0)').run(dateStr);
+  db.prepare('UPDATE invoice_sequences SET last_sequence = last_sequence + 1 WHERE date_key = ?').run(dateStr);
+
+  const row = db.prepare('SELECT last_sequence FROM invoice_sequences WHERE date_key = ?')
+    .get(dateStr) as { last_sequence: number };
+  const sequence = String(row.last_sequence).padStart(3, '0');
   return `RF-${dateStr}-${sequence}`;
 }
+
+const createInvoiceTransaction = db.transaction((input: {
+  patient_id: number;
+  appointment_id?: number;
+  units: number;
+  rate_per_unit: number;
+  total: number;
+  description?: string;
+}) => {
+  const invoiceNumber = generateInvoiceNumber();
+
+  const result = db.prepare(`
+    INSERT INTO invoices (invoice_number, patient_id, appointment_id, units, rate_per_unit, total, description)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    invoiceNumber,
+    input.patient_id,
+    input.appointment_id || null,
+    input.units,
+    input.rate_per_unit,
+    input.total,
+    input.description || ''
+  );
+
+  return db.prepare(`
+    SELECT i.*, p.first_name || ' ' || p.last_name as patient_name,
+           p.email as patient_email, p.phone as patient_phone,
+           p.birthdate as patient_birthdate
+    FROM invoices i
+    JOIN patients p ON i.patient_id = p.id
+    WHERE i.id = ?
+  `).get(result.lastInsertRowid);
+});
 
 // Get all invoices
 router.get('/', (req, res) => {
@@ -94,22 +126,9 @@ router.post('/', async (req, res) => {
   }
   
   const total = units * rate_per_unit;
-  const invoice_number = generateInvoiceNumber();
   
   try {
-    const result = db.prepare(`
-      INSERT INTO invoices (invoice_number, patient_id, appointment_id, units, rate_per_unit, total, description)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `).run(invoice_number, patient_id, appointment_id || null, units, rate_per_unit, total, description || '');
-    
-    const invoice = db.prepare(`
-      SELECT i.*, p.first_name || ' ' || p.last_name as patient_name,
-             p.email as patient_email, p.phone as patient_phone,
-             p.birthdate as patient_birthdate
-      FROM invoices i
-      JOIN patients p ON i.patient_id = p.id
-      WHERE i.id = ?
-    `).get(result.lastInsertRowid);
+    const invoice = createInvoiceTransaction({ patient_id, appointment_id, units, rate_per_unit, total, description });
     
     res.status(201).json({ success: true, data: invoice });
   } catch (error) {

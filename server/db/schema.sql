@@ -29,6 +29,7 @@ CREATE TABLE IF NOT EXISTS appointments (
     treatment_services TEXT,
     next_appointment_date TEXT,
     treatment_completed_at TEXT,
+    status TEXT NOT NULL DEFAULT 'confirmed',
     sms_reminder INTEGER DEFAULT 0,
     created_at TEXT DEFAULT (datetime('now')),
     FOREIGN KEY (patient_id) REFERENCES patients(id) ON DELETE CASCADE
@@ -66,6 +67,12 @@ CREATE INDEX IF NOT EXISTS idx_appointments_patient ON appointments(patient_id);
 CREATE INDEX IF NOT EXISTS idx_invoices_patient ON invoices(patient_id);
 CREATE INDEX IF NOT EXISTS idx_invoices_paid ON invoices(paid);
 CREATE INDEX IF NOT EXISTS idx_sms_log_appointment ON sms_log(appointment_id);
+
+-- Invoice sequence table for atomic daily invoice number generation
+CREATE TABLE IF NOT EXISTS invoice_sequences (
+    date_key TEXT PRIMARY KEY,
+    last_sequence INTEGER NOT NULL
+);
 
 -- Expenses table
 CREATE TABLE IF NOT EXISTS expenses (

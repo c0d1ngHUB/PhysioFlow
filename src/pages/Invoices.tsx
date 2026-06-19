@@ -181,13 +181,13 @@ export default function Invoices({ openCreateModal = false, onCreateModalOpened 
       />
 
       {/* Filter */}
-      <div className="flex gap-2">
-        <Button size="sm" variant={filterPaid === 'all' ? 'primary' : 'outline'} onClick={() => setFilterPaid('all')}>Alle</Button>
+      <div className="flex gap-1.5">
+        <Button size="sm" variant={filterPaid === 'all' ? 'primary' : 'outline'} onClick={() => setFilterPaid('all')} className="text-xs py-1.5 px-3 h-auto">Alle</Button>
         <Button
           size="sm"
           variant="outline"
           onClick={() => setFilterPaid('unpaid')}
-          className={filterPaid === 'unpaid' ? 'border-amber-500 bg-amber-500 text-white hover:bg-amber-600 hover:text-white' : ''}
+          className={`text-xs py-1.5 px-3 h-auto ${filterPaid === 'unpaid' ? 'border-amber-500 bg-amber-500 text-white hover:bg-amber-600 hover:text-white' : ''}`}
         >
           Offen ({invoices.filter(i => !i.paid).length})
         </Button>
@@ -195,26 +195,10 @@ export default function Invoices({ openCreateModal = false, onCreateModalOpened 
           size="sm"
           variant="outline"
           onClick={() => setFilterPaid('paid')}
-          className={filterPaid === 'paid' ? 'border-emerald-500 bg-emerald-500 text-white hover:bg-emerald-600 hover:text-white' : ''}
+          className={`text-xs py-1.5 px-3 h-auto ${filterPaid === 'paid' ? 'border-emerald-500 bg-emerald-500 text-white hover:bg-emerald-600 hover:text-white' : ''}`}
         >
           Bezahlt
         </Button>
-      </div>
-
-      {/* Stats Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
-          <p className="text-sm text-gray-500 font-medium">Offen</p>
-          <p className="text-3xl font-semibold text-amber-600 mt-1">{formatCurrency(totalUnpaid)}</p>
-        </div>
-        <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
-          <p className="text-sm text-gray-500 font-medium">Bezahlt (dieser Monat)</p>
-          <p className="text-3xl font-semibold text-emerald-600 mt-1">{formatCurrency(invoices.filter(i => i.paid && new Date(i.created_at || '').getMonth() === new Date().getMonth()).reduce((s, i) => s + i.total, 0))}</p>
-        </div>
-        <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
-          <p className="text-sm text-gray-500 font-medium">Gesamt (alle Zeit)</p>
-          <p className="text-3xl font-semibold text-blue-600 mt-1">{formatCurrency(invoices.reduce((s, i) => s + i.total, 0))}</p>
-        </div>
       </div>
 
       {/* Invoice Table */}

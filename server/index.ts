@@ -3,6 +3,8 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import rateLimit from 'express-rate-limit';
+import db from './db/index.js';
 
 import patientsRouter from './routes/patients.js';
 import appointmentsRouter from './routes/appointments.js';
@@ -15,10 +17,12 @@ import {
   getAuthenticatedUser,
   requireAuth,
   setSessionCookie,
+  validateAuthConfig,
   validateAdminCredentials,
 } from './auth.js';
 
 dotenv.config();
+validateAuthConfig();
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -27,12 +31,48 @@ const PORT = process.env.PORT || 3001;
 const HOST = process.env.HOST || (process.env.NODE_ENV === 'production' ? '127.0.0.1' : '0.0.0.0');
 const authEnabled = Boolean(process.env.PHYSIOFLOW_ADMIN_PASSWORD);
 
+function getAllowedOrigins() {
+  const configuredOrigins = (process.env.ALLOWED_ORIGINS || '')
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+
+  if (configuredOrigins.length > 0) {
+    return configuredOrigins;
+  }
+
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error('ALLOWED_ORIGINS muss in Produktion gesetzt sein');
+  }
+
+  return ['http://localhost:5173', 'http://127.0.0.1:5173', 'http://localhost:3001', 'http://127.0.0.1:3001'];
+}
+
+const allowedOrigins = new Set(getAllowedOrigins());
+
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, error: 'Zu viele Login-Versuche. Bitte versuchen Sie es in 15 Minuten erneut.' },
+});
+
 // Middleware
-app.use(cors({ credentials: true, origin: true }));
+app.use(cors({
+  credentials: true,
+  origin(origin, callback) {
+    if (!origin || allowedOrigins.has(origin)) {
+      return callback(null, true);
+    }
+    return callback(new Error('CORS origin not allowed'));
+  },
+}));
 app.use(express.json());
 
 app.get('/api/health', (_req, res) => {
-  res.json({ success: true, data: { status: 'ok', authEnabled } });
+  db.prepare('SELECT 1').get();
+  res.json({ success: true, data: { status: 'ok', authEnabled, database: 'ok' } });
 });
 
 app.get('/api/auth/session', (req, res) => {
@@ -47,7 +87,7 @@ app.get('/api/auth/session', (req, res) => {
   });
 });
 
-app.post('/api/auth/login', (req, res) => {
+app.post('/api/auth/login', loginLimiter, (req, res) => {
   const { username, password } = req.body ?? {};
 
   if (!authEnabled) {
