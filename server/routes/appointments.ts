@@ -44,14 +44,23 @@ router.get('/', (req, res) => {
     LEFT JOIN therapists t ON a.therapist_id = t.id
     WHERE 1=1
   `;
+  let countQuery = `
+    SELECT COUNT(*) as total
+    FROM appointments a
+    JOIN patients p ON a.patient_id = p.id
+    LEFT JOIN therapists t ON a.therapist_id = t.id
+    WHERE 1=1
+  `;
   const params: SqlParam[] = [];
 
   if (date && !view) {
     query += ' AND a.date = ?';
+    countQuery += ' AND a.date = ?';
     params.push(date);
   } else if (date && view === 'week') {
     const { monday, sunday } = getWeekRange(String(date));
     query += ' AND a.date >= ? AND a.date <= ?';
+    countQuery += ' AND a.date >= ? AND a.date <= ?';
     params.push(monday, sunday);
   } else if (date && view === 'month') {
     const [year, month] = String(date).split('-').map(Number);
@@ -59,19 +68,23 @@ router.get('/', (req, res) => {
     const lastDay = new Date(year, month, 0).getDate();
     const end = `${String(year)}-${String(month).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
     query += ' AND a.date >= ? AND a.date <= ?';
+    countQuery += ' AND a.date >= ? AND a.date <= ?';
     params.push(start, end);
   } else if (date) {
     query += ' AND a.date = ?';
+    countQuery += ' AND a.date = ?';
     params.push(date);
   }
 
   if (patientId) {
     query += ' AND a.patient_id = ?';
+    countQuery += ' AND a.patient_id = ?';
     params.push(patientId);
   }
 
   if (therapistId) {
     query += ' AND a.therapist_id = ?';
+    countQuery += ' AND a.therapist_id = ?';
     params.push(therapistId);
   }
 
@@ -81,7 +94,6 @@ router.get('/', (req, res) => {
     const { page, limit } = getPaginationParams(req);
     const offset = (page - 1) * limit;
 
-    const countQuery = query.replace(/SELECT.*?FROM/, 'SELECT COUNT(*) as total FROM').replace(/ORDER BY.*$/, '');
     const countResult = db.prepare(countQuery).get(...params) as { total: number };
     const total = countResult?.total || 0;
 

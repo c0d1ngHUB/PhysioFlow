@@ -52,18 +52,25 @@ router.get('/', (req, res) => {
     SELECT i.*, p.first_name || ' ' || p.last_name as patient_name,
            p.email as patient_email, p.phone as patient_phone
     FROM invoices i
-    JOIN patients p ON i.patient_id = p.id
+    LEFT JOIN patients p ON i.patient_id = p.id
+    WHERE 1=1
+  `;
+  let countQuery = `
+    SELECT COUNT(*) as total
+    FROM invoices i
     WHERE 1=1
   `;
   const params: SqlParam[] = [];
 
   if (paid !== undefined) {
     query += ' AND i.paid = ?';
+    countQuery += ' AND i.paid = ?';
     params.push(paid === 'true' ? 1 : 0);
   }
 
   if (patientId) {
     query += ' AND i.patient_id = ?';
+    countQuery += ' AND i.patient_id = ?';
     params.push(patientId);
   }
 
@@ -73,7 +80,6 @@ router.get('/', (req, res) => {
     const { page, limit } = getPaginationParams(req);
     const offset = (page - 1) * limit;
 
-    const countQuery = query.replace(/SELECT.*?FROM/, 'SELECT COUNT(*) as total FROM').replace(/ORDER BY.*$/, '');
     const countResult = db.prepare(countQuery).get(...params) as { total: number };
     const total = countResult?.total || 0;
 

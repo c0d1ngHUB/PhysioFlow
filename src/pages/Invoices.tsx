@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Appointment, Invoice, Patient } from '../types';
-import { ConfirmModal, Modal, showToast } from '../components/ui';
+import { ConfirmModal, Modal, Pagination, showToast } from '../components/ui';
 import { formatCurrency } from '../utils/formatting';
 import { apiFetch } from '../utils/api.js';
 
@@ -32,6 +32,10 @@ export default function Invoices({ initialModal, onModalConsumed }: InvoicesProp
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [filterPaid, setFilterPaid] = useState<'all' | 'paid' | 'unpaid'>('all');
+  const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(20);
+  const [total, setTotal] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
   const [confirmAction, setConfirmAction] = useState<{ message: string; onConfirm: () => void; title?: string; variant?: 'danger' | 'default' } | null>(null);
   const [formData, setFormData] = useState({
     patient_id: '',
@@ -50,7 +54,7 @@ export default function Invoices({ initialModal, onModalConsumed }: InvoicesProp
 
   useEffect(() => {
     void Promise.all([fetchInvoices(), fetchPatients()]).finally(() => setLoading(false));
-  }, [filterPaid]);
+  }, [filterPaid, page, limit]);
 
   useEffect(() => {
     if (formData.patient_id) {
@@ -65,11 +69,15 @@ export default function Invoices({ initialModal, onModalConsumed }: InvoicesProp
       const params = new URLSearchParams();
       if (filterPaid === 'paid') params.set('paid', 'true');
       if (filterPaid === 'unpaid') params.set('paid', 'false');
+      params.set('page', String(page));
+      params.set('limit', String(limit));
 
       const res = await apiFetch(`/api/invoices${params.toString() ? `?${params.toString()}` : ''}`, { credentials: 'include' });
       const data = await res.json();
       if (data.success) {
         setInvoices(data.data);
+        setTotal(data.pagination?.total ?? data.data.length);
+        setTotalPages(data.pagination?.totalPages ?? 1);
         return;
       }
 
@@ -221,7 +229,7 @@ export default function Invoices({ initialModal, onModalConsumed }: InvoicesProp
             <p className="text-sm font-medium uppercase tracking-wide text-slate-500">Finanzen</p>
             <h2 className="mt-1 text-2xl font-semibold text-slate-900">Honorarnoten und Mahnwesen</h2>
             <p className="mt-2 text-sm text-slate-600">
-              {invoices.length === 1 ? '1 Honorarnote' : invoices.length + ' Honorarnoten'}, davon {unpaidInvoices.length} offen
+              {total === 1 ? '1 Honorarnote' : total + ' Honorarnoten'}{filterPaid === 'all' ? `, davon ${unpaidInvoices.length} auf dieser Seite offen` : ''}
             </p>
           </div>
           <button onClick={() => setShowModal(true)} className="rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-medium text-white hover:bg-blue-700">
@@ -256,7 +264,7 @@ export default function Invoices({ initialModal, onModalConsumed }: InvoicesProp
         ].map((filter) => (
           <button
             key={filter.key}
-            onClick={() => setFilterPaid(filter.key as 'all' | 'paid' | 'unpaid')}
+            onClick={() => { setFilterPaid(filter.key as 'all' | 'paid' | 'unpaid'); setPage(1); }}
             className={`rounded-xl px-4 py-2 text-sm font-medium transition ${
               filterPaid === filter.key ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
             }`}
@@ -390,6 +398,15 @@ export default function Invoices({ initialModal, onModalConsumed }: InvoicesProp
           </div>
         )}
       </div>
+
+      <Pagination
+        page={page}
+        limit={limit}
+        total={total}
+        totalPages={totalPages}
+        onPageChange={setPage}
+        onLimitChange={(newLimit) => { setLimit(newLimit); setPage(1); }}
+      />
 
       <Modal isOpen={showModal} onClose={() => setShowModal(false)} title="Neue Honorarnote" size="lg">
         <form onSubmit={submitInvoice} className="space-y-5 p-6">

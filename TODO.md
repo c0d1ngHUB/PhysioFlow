@@ -7,18 +7,19 @@
 - [x] ~~Session-Cookie über HTTP blockiert~~ → Fixed
 - [x] ~~SPA-Fallback matcht /api/ Routes~~ → Fixed
 - [x] ~~HSTS preload zwang HTTPS-Upgrade~~ → Fixed
-- [ ] **Umsatz-Berechnung verwendet created_at statt paid_at** — Dashboard zeigt "Noch kein Umsatz" für Juni obwohl Rechnungen bezahlt wurden (nur im Mai erstellt). Fehlt: paid_at-Spalte in invoices-Tabelle
-- [ ] **Impressum/Datenschutz-Seiten leer** — Links vorhanden aber kein Inhalt. Rechtlich erforderlich (Österreich: ECG §5)
+- [x] ~~Umsatz-Berechnung verwendet created_at statt paid_at~~ → Fixed mit `paid_at`-Migration und Dashboard-Abfragen über Zahlungsdatum
+- [x] ~~Impressum/Datenschutz-Seiten leer~~ → Fixed
 
 ## 🟡 Mittlere Bugs / Verbesserungen
 
 - [x] ~~Singular/Plural "1 Honorarnoten"~~ → Fixed
 - [x] ~~CSP upgrade-insecure-requests~~ → Fixed
-- [ ] **Backup-Dateien aufräumen** — patients.ts.bak und index.ts.bak im Repo
-- [ ] **Missing DB-Indexes laut Code Review** — appointments(status), audit_logs(timestamp), audit_logs(action)
+- [x] ~~Backup-Dateien aufräumen~~ → Fixed; keine `*.bak`-Dateien mehr im Repo
+- [x] ~~Missing DB-Indexes laut Code Review~~ → Fixed mit `appointments(status)`, `audit_logs(timestamp)`, `audit_logs(action)`
 - [ ] **API-Response-Formate inkonsistent** — Manche Routes geben { data }, andere { message }, andere { data, pagination }
-- [ ] **Kein Frontend-Pagination** — API unterstützt es, Frontend nutzt es nicht
-- [ ] **Voucher patient_name immer null** — patient_id ist gesetzt aber JOIN fehlt in vouchers-Route
+- [x] ~~Kein Frontend-Pagination~~ → Fixed für Patienten und Honorarnoten
+- [x] ~~Voucher patient_name immer null~~ → Fixed mit Patient:innen-JOIN in Voucher-Routen
+- [x] ~~npm audit: high/critical Advisories~~ → Fixed via Lockfile-Refresh; nur ein Low-Severity dev-server Advisory für Windows bleibt
 
 ## 🟢 Features (laut SPEC.md)
 
