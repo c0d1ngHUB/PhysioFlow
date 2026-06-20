@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import type { ReactNode } from 'react';
 import { DashboardStats } from '../types';
 import type { Page } from '../navigation';
 import { apiFetch } from '../utils/api.js';
@@ -31,15 +32,29 @@ function WidgetError({ message, onRetry }: { message: string; onRetry: () => voi
   );
 }
 
+function StatCard({ label, value, hint, accent = 'blue' }: { label: string; value: string | number | ReactNode; hint: string; accent?: 'blue' | 'emerald' | 'amber' | 'purple' }) {
+  const accentClasses = {
+    blue: 'border-blue-100 bg-blue-50 text-blue-700',
+    emerald: 'border-emerald-100 bg-emerald-50 text-emerald-700',
+    amber: 'border-amber-100 bg-amber-50 text-amber-700',
+    purple: 'border-purple-100 bg-purple-50 text-purple-700',
+  }[accent];
+
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+      <div className={`mb-4 h-1.5 w-14 rounded-full border ${accentClasses}`} />
+      <p className="text-sm font-medium text-slate-500">{label}</p>
+      <p className="mt-2 text-3xl font-semibold text-slate-950">{value}</p>
+      <p className="mt-1 text-xs text-slate-500">{hint}</p>
+    </div>
+  );
+}
+
 export default function Dashboard({ onNavigate }: DashboardProps) {
   const [stats, setStats] = useState<ExtendedStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [currentTime, setCurrentTime] = useState(new Date());
-
-  const [units, setUnits] = useState('10');
-  const [rate, setRate] = useState('50');
-  const [calculatedTotal, setCalculatedTotal] = useState(500);
 
   useEffect(() => {
     fetchStats();
@@ -68,12 +83,6 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
     setLoading(false);
   };
 
-  useEffect(() => {
-    // const u = parseFloat(units) || 0;
-    // const r = parseFloat(rate) || 0;
-    setCalculatedTotal((parseFloat(units) || 0) * (parseFloat(rate) || 0));
-  }, [units, rate]);
-
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('de-AT', {
       style: 'currency',
@@ -88,6 +97,14 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
     return 'Guten Abend';
   };
 
+  const todaysNextAppointment = stats?.today_details?.[0];
+  const openInvoiceCount = stats?.unpaid_invoices || 0;
+  const openInvoiceAmount = stats?.unpaid_invoices_total || 0;
+  const revenueDiff = (stats?.this_month_revenue || 0) - (stats?.last_month_revenue || 0);
+  const revenuePct = stats?.last_month_revenue && stats.last_month_revenue > 0
+    ? Math.round((revenueDiff / stats.last_month_revenue) * 100)
+    : 0;
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-96">
@@ -98,12 +115,12 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="bg-white rounded-xl border border-gray-200 px-6 py-5 shadow-sm">
-        <div className="flex items-center justify-between">
+      <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+        <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
           <div>
-            <h1 className="text-2xl font-semibold text-gray-900">{getGreeting()}</h1>
-            <p className="text-gray-500 mt-1">
+            <p className="text-sm font-medium uppercase tracking-wide text-slate-500">Auswertung</p>
+            <h1 className="mt-1 text-3xl font-semibold text-slate-950">{getGreeting()}, Markus</h1>
+            <p className="mt-2 text-slate-500">
               {currentTime.toLocaleDateString('de-AT', {
                 weekday: 'long',
                 year: 'numeric',
@@ -112,364 +129,193 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
               })}
             </p>
           </div>
-          <div className="flex items-center gap-3">
-            <span className="text-2xl">🩺</span>
-            <span className="font-semibold text-gray-700">PhysioFlow</span>
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <button onClick={() => onNavigate('calendar', 'appointment')} className="rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-medium text-white shadow-sm hover:bg-blue-700">
+              + Termin
+            </button>
+            <button onClick={() => onNavigate('invoices', 'invoice')} className="rounded-xl border border-blue-200 bg-blue-50 px-5 py-2.5 text-sm font-medium text-blue-700 hover:bg-blue-100">
+              + Honorarnote
+            </button>
           </div>
         </div>
       </div>
 
-      {/* Stats Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-        {error ? (
-          <>
-            <WidgetError message={error} onRetry={fetchStats} />
-            <WidgetError message={error} onRetry={fetchStats} />
-            <WidgetError message={error} onRetry={fetchStats} />
-            <WidgetError message={error} onRetry={fetchStats} />
-          </>
-        ) : (
-          <>
-        <div className="bg-white rounded-xl border border-gray-200 p-5 hover:border-blue-300 transition-colors shadow-sm">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm text-gray-500 font-medium">Heute</p>
-              <p className="text-3xl font-semibold text-gray-900 mt-1">{stats?.today_appointments || 0}</p>
-              <p className="text-xs text-gray-500 mt-1">{stats?.today_appointments ? 'Termine' : 'Keine Termine'}</p>
-            </div>
-            <div className="w-10 h-10 bg-blue-50 rounded-lg flex items-center justify-center text-lg">📅</div>
-          </div>
-        </div>
-
-        <div className="bg-white rounded-xl border border-gray-200 p-5 hover:border-blue-300 transition-colors shadow-sm">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm text-gray-500 font-medium">Diese Woche</p>
-              <p className="text-3xl font-semibold text-gray-900 mt-1">{stats?.upcoming_appointments || 0}</p>
-              <p className="text-xs text-gray-500 mt-1">{stats?.upcoming_appointments ? 'Anstehend' : 'Keine diese Woche'}</p>
-            </div>
-            <div className="w-10 h-10 bg-green-50 rounded-lg flex items-center justify-center text-lg">📆</div>
-          </div>
-        </div>
-
-        <div className="bg-white rounded-xl border border-gray-200 p-5 hover:border-blue-300 transition-colors shadow-sm">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm text-gray-500 font-medium">Offene Rechnungen</p>
-              <p className="text-3xl font-semibold text-gray-900 mt-1">{stats?.unpaid_invoices || 0}</p>
-              <p className="text-sm text-amber-600 font-medium mt-1">
-                {stats?.unpaid_invoices ? formatCurrency(stats?.unpaid_invoices_total || 0) : <span className="text-emerald-600 text-sm">✓ Alle bezahlt</span>}
-              </p>
-            </div>
-            <div className="w-10 h-10 bg-amber-50 rounded-lg flex items-center justify-center text-lg">💰</div>
-          </div>
-        </div>
-
-        <div className="bg-white rounded-xl border border-gray-200 p-5 hover:border-blue-300 transition-colors shadow-sm">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm text-gray-500 font-medium">Patienten</p>
-              <p className="text-3xl font-semibold text-gray-900 mt-1">{stats?.total_patients || 0}</p>
-              <p className="text-xs text-gray-500 mt-1">Registriert</p>
-            </div>
-            <div className="w-10 h-10 bg-purple-50 rounded-lg flex items-center justify-center text-lg">👥</div>
-          </div>
-        </div>
-          </>
-        )}
-      </div>
-
-      {/* Revenue & Quick Stats Row */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
-        {error ? (
-          <>
-            <WidgetError message={error} onRetry={fetchStats} />
-            <WidgetError message={error} onRetry={fetchStats} />
-            <WidgetError message={error} onRetry={fetchStats} />
-          </>
-        ) : (
-          <>
-        {/* Monthly Revenue Card */}
-        <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
-          <div className="flex items-center justify-between mb-3">
-            <p className="text-sm text-gray-500 font-medium">Umsatz {currentTime.toLocaleDateString('de-AT', { month: 'long' })}</p>
-            <span className="text-lg">💶</span>
-          </div>
-          <p className="text-3xl font-bold text-gray-900">{stats?.this_month_revenue ? formatCurrency(stats.this_month_revenue) : <span className="text-gray-400 text-lg">Noch kein Umsatz</span>}</p>
-          <div className="mt-3 flex items-center gap-2">
-            {(() => {
-              const diff = (stats?.this_month_revenue || 0) - (stats?.last_month_revenue || 0);
-              const pct = stats?.last_month_revenue && stats.last_month_revenue > 0
-                ? Math.round((diff / stats.last_month_revenue) * 100)
-                : 0;
-              const isPositive = diff >= 0;
-              return (
-                <>
-                  <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${isPositive ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>
-                    {isPositive ? '↑' : '↓'} {Math.abs(pct)}%
-                  </span>
-                  <span className="text-xs text-gray-500">
-                    vs. {formatCurrency(stats?.last_month_revenue || 0)} (Vormonat)
-                  </span>
-                </>
-              );
-            })()}
-          </div>
-        </div>
-
-        {/* Appointments this month */}
-        <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
-          <div className="flex items-center justify-between mb-3">
-            <p className="text-sm text-gray-500 font-medium">Termine diesen Monat</p>
-            <span className="text-lg">🗓️</span>
-          </div>
-          <p className="text-3xl font-semibold text-gray-900">{stats?.this_month_appointments || 0}</p>
-          <p className="text-xs text-gray-500 mt-1">{stats?.this_month_appointments ? 'Behandlungen durchgeführt' : 'Noch keine Termine'}</p>
-        </div>
-
-        {/* Outstanding amount */}
-        <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
-          <div className="flex items-center justify-between mb-3">
-            <p className="text-sm text-gray-500 font-medium">Ausständiger Betrag</p>
-            <span className="text-lg">⏳</span>
-          </div>
-          <p className="text-3xl font-semibold text-amber-600">{stats?.unpaid_invoices ? formatCurrency(stats.unpaid_invoices_total || 0) : <span className="text-emerald-600 text-lg">✓ Alle bezahlt</span>}</p>
-          <p className="text-xs text-gray-500 mt-1">{stats?.unpaid_invoices ? `${stats.unpaid_invoices} unbezahlte Rechnungen` : 'Keine offenen Rechnungen'}</p>
-        </div>
-          </>
-        )}
-      </div>
-
-      {/* Two Column Layout */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Today's Appointments */}
-        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm">
-          <div className="px-5 py-4 border-b border-gray-100 bg-gray-50">
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="font-semibold text-gray-900">Heutige Termine</h3>
-                <p className="text-sm text-gray-500">{error ? 'Daten derzeit nicht verfügbar' : `${stats?.today_appointments || 0} Termine geplant`}</p>
-              </div>
-              <span className="text-lg">📋</span>
-            </div>
-          </div>
-          <div className="p-5">
-            {error ? (
-              <WidgetError message={error} onRetry={fetchStats} />
-            ) : stats?.today_details && stats.today_details.length > 0 ? (
-              <div className="space-y-3">
-                {stats.today_details.map((apt) => (
-                  <div
-                    key={apt.id}
-                    className="flex items-center gap-4 p-3 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors cursor-pointer border-l-4 border-blue-500"
-                  >
-                    <div className="w-14 h-12 bg-white rounded-lg flex flex-col items-center justify-center shadow-sm">
-                      <span className="text-sm font-bold text-gray-700">{apt.time_start.split(':')[0]}</span>
-                      <span className="text-xs text-gray-500">{apt.time_start.split(':')[1]}</span>
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="font-medium text-gray-900">{apt.patient_name}</p>
-                      <p className="text-sm text-gray-500">{apt.treatment_type}</p>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-sm font-medium text-gray-700">{apt.time_end}</p>
-                      {apt.sms_reminder === 1 && (
-                        <span className="text-xs text-emerald-600">✓ SMS</span>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="text-center py-10">
-                <span className="text-4xl text-gray-300">📭</span>
-                <p className="text-gray-500 font-medium mt-2">Keine Termine heute</p>
-                <button onClick={() => onNavigate('calendar', 'appointment')} className="mt-2 text-sm text-blue-600 hover:text-blue-800 font-medium">＋ Termin erstellen</button>
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Upcoming This Week */}
-        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm">
-          <div className="px-5 py-4 border-b border-gray-100 bg-gray-50">
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="font-semibold text-gray-900">Diese Woche</h3>
-                <p className="text-sm text-gray-500">{error ? 'Daten derzeit nicht verfügbar' : `${stats?.upcoming_this_week?.length || 0} anstehende Termine`}</p>
-              </div>
-              <span className="text-lg">📆</span>
-            </div>
-          </div>
-          <div className="p-5">
-            {error ? (
-              <WidgetError message={error} onRetry={fetchStats} />
-            ) : stats?.upcoming_this_week && stats.upcoming_this_week.length > 0 ? (
-              <div className="space-y-2 max-h-72 overflow-y-auto">
-                {stats.upcoming_this_week.map((apt: any, idx: number) => {
-                  const date = new Date(apt.date + 'T00:00:00');
-                  // Use local date to avoid DST shift
-                  const d = new Date();
-                  const today = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
-                  const isToday = apt.date === today;
-                  return (
-                    <div key={apt.id || idx} className="flex items-center gap-3 p-2.5 rounded-lg hover:bg-gray-50 transition-colors">
-                      <div className={`w-10 h-10 rounded-lg flex flex-col items-center justify-center text-xs font-bold ${isToday ? 'bg-blue-600 text-white' : 'bg-blue-50 text-blue-700'}`}>
-                        <span>{date.toLocaleDateString('de-AT', { day: '2-digit' })}</span>
-                        <span className="text-[10px] uppercase">{date.toLocaleDateString('de-AT', { weekday: 'short' })}</span>
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="font-medium text-gray-900 text-sm truncate">{apt.patient_name}</p>
-                        <p className="text-xs text-gray-500">{apt.time_start} – {apt.time_end} · {apt.treatment_type}</p>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            ) : (
-              <div className="text-center py-10">
-                <span className="text-4xl text-gray-300">📭</span>
-                <p className="text-gray-500 font-medium mt-2">Keine Termine diese Woche</p>
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* Revenue Chart */}
       {error ? (
         <WidgetError message={error} onRetry={fetchStats} />
-      ) : stats?.six_months_revenue && stats.six_months_revenue.length > 0 && (
-        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm">
-          <div className="px-5 py-4 border-b border-gray-100 bg-gray-50">
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="font-semibold text-gray-900">Umsatzübersicht</h3>
-                <p className="text-sm text-gray-500">Letzte 6 Monate (bezahlte Honorarnoten)</p>
-              </div>
-              <span className="text-lg">📊</span>
-            </div>
-          </div>
-          <div className="p-5 overflow-x-auto">
-            {(() => {
-              const maxRev = Math.max(...stats.six_months_revenue.map(m => m.revenue), 1);
-              return (
-                <div className="flex items-end gap-2 sm:gap-3 min-w-[280px] h-40">
-                  {stats.six_months_revenue.map((m, i) => {
-                    const heightPct = Math.max((m.revenue / maxRev) * 100, 2);
-                    const isCurrentMonth = i === stats.six_months_revenue.length - 1;
-                    return (
-                      <div key={i} className="flex-1 flex flex-col items-center gap-1 min-w-0">
-                        <div className="w-full flex flex-col items-center justify-end" style={{ height: '140px' }}>
-                          <div
-                            className={`w-full max-w-12 rounded-t-md transition-all ${isCurrentMonth ? 'bg-blue-600' : 'bg-blue-300'}`}
-                            style={{ height: `${heightPct}%` }}
-                            title={formatCurrency(m.revenue)}
-                          />
-                        </div>
-                        <span className={`text-[10px] sm:text-xs font-medium truncate w-full text-center ${isCurrentMonth ? 'text-blue-700 font-bold' : 'text-gray-500'}`}>
-                          {m.month}
-                        </span>
-                        <span className="text-[9px] sm:text-[10px] text-gray-500 whitespace-nowrap">{formatCurrency(m.revenue)}</span>
-                      </div>
-                    );
-                  })}
+      ) : (
+        <>
+          <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
+            <div className="rounded-2xl border border-blue-200 bg-gradient-to-br from-blue-50 to-white p-6 shadow-sm">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p className="text-sm font-semibold uppercase tracking-wide text-blue-700">Heute</p>
+                  <p className="mt-3 text-4xl font-semibold text-slate-950">{stats?.today_appointments || 0}</p>
+                  <p className="mt-1 text-sm text-slate-600">{stats?.today_appointments === 1 ? 'Termin geplant' : 'Termine geplant'}</p>
                 </div>
-              );
-            })()}
+                <div className="rounded-2xl bg-white px-3 py-2 text-sm font-medium text-blue-700 shadow-sm">
+                  {currentTime.toLocaleTimeString('de-AT', { hour: '2-digit', minute: '2-digit' })}
+                </div>
+              </div>
+              {todaysNextAppointment ? (
+                <div className="mt-6 rounded-xl border border-blue-100 bg-white p-4">
+                  <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Nächster Termin</p>
+                  <div className="mt-2 flex items-center justify-between gap-4">
+                    <div>
+                      <p className="font-semibold text-slate-950">{todaysNextAppointment.patient_name}</p>
+                      <p className="text-sm text-slate-500">{todaysNextAppointment.treatment_type}</p>
+                    </div>
+                    <p className="rounded-lg bg-blue-50 px-3 py-2 font-mono text-sm font-semibold text-blue-700">
+                      {todaysNextAppointment.time_start}–{todaysNextAppointment.time_end}
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <div className="mt-6 rounded-xl border border-blue-100 bg-white p-4">
+                  <p className="font-medium text-slate-800">Keine Termine geplant</p>
+                  <p className="mt-1 text-sm text-slate-500">Der Tag ist frei — oder bereit für neue Behandlungen.</p>
+                  <button onClick={() => onNavigate('calendar', 'appointment')} className="mt-3 text-sm font-medium text-blue-700 hover:text-blue-900">
+                    + Termin erstellen
+                  </button>
+                </div>
+              )}
+            </div>
+
+            <div className="rounded-2xl border border-amber-200 bg-gradient-to-br from-amber-50 to-white p-6 shadow-sm">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p className="text-sm font-semibold uppercase tracking-wide text-amber-700">Finanzen</p>
+                  <p className="mt-3 text-4xl font-semibold text-slate-950">{openInvoiceCount ? formatCurrency(openInvoiceAmount) : 'Alles bezahlt'}</p>
+                  <p className="mt-1 text-sm text-slate-600">
+                    {openInvoiceCount ? `${openInvoiceCount} offene ${openInvoiceCount === 1 ? 'Honorarnote' : 'Honorarnoten'}` : 'Keine offenen Honorarnoten'}
+                  </p>
+                </div>
+                <div className="rounded-2xl bg-white px-3 py-2 text-sm font-medium text-amber-700 shadow-sm">Offen</div>
+              </div>
+              <div className="mt-6 grid gap-3 sm:grid-cols-2">
+                <button onClick={() => onNavigate('invoices')} className="rounded-xl border border-amber-100 bg-white px-4 py-3 text-left text-sm font-medium text-amber-800 shadow-sm hover:bg-amber-50">
+                  Zu Finanzen →
+                </button>
+                <button onClick={() => onNavigate('invoices', 'invoice')} className="rounded-xl border border-blue-100 bg-white px-4 py-3 text-left text-sm font-medium text-blue-700 shadow-sm hover:bg-blue-50">
+                  + Honorarnote
+                </button>
+              </div>
+            </div>
           </div>
-        </div>
+
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+            <StatCard label="Diese Woche" value={stats?.upcoming_appointments || 0} hint={stats?.upcoming_appointments ? 'anstehende Termine' : 'keine Termine diese Woche'} accent="blue" />
+            <StatCard label="Patient:innen" value={stats?.total_patients || 0} hint="registriert" accent="purple" />
+            <StatCard label={`Umsatz ${currentTime.toLocaleDateString('de-AT', { month: 'long' })}`} value={stats?.this_month_revenue ? formatCurrency(stats.this_month_revenue) : '0 €'} hint={`${revenueDiff >= 0 ? '+' : '−'}${formatCurrency(Math.abs(revenueDiff))} / ${Math.abs(revenuePct)}% vs. Vormonat`} accent="emerald" />
+            <StatCard label="Monat" value={stats?.this_month_appointments || 0} hint={stats?.this_month_appointments ? 'Behandlungen durchgeführt' : 'noch keine Behandlungen'} accent="blue" />
+          </div>
+
+          {stats?.six_months_revenue && stats.six_months_revenue.length > 0 && (
+            <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+              <div className="border-b border-slate-100 px-6 py-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="font-semibold text-slate-950">Umsatzentwicklung</h3>
+                    <p className="text-sm text-slate-500">Letzte 6 Monate · bezahlte Honorarnoten</p>
+                  </div>
+                  <span className="text-sm font-medium text-slate-500">{formatCurrency(stats.this_month_revenue || 0)} aktuell</span>
+                </div>
+              </div>
+              <div className="p-6 overflow-x-auto">
+                {(() => {
+                  const maxRev = Math.max(...stats.six_months_revenue.map(m => m.revenue), 1);
+                  return (
+                    <div className="flex min-w-[360px] items-end gap-4 h-44">
+                      {stats.six_months_revenue.map((m, i) => {
+                        const heightPct = Math.max((m.revenue / maxRev) * 100, 3);
+                        const isCurrentMonth = i === stats.six_months_revenue.length - 1;
+                        return (
+                          <div key={m.month} className="flex flex-1 flex-col items-center gap-2">
+                            <div className="flex h-32 w-full items-end justify-center rounded-xl bg-slate-50 px-2">
+                              <div
+                                className={`w-full max-w-12 rounded-t-lg ${isCurrentMonth ? 'bg-blue-600' : 'bg-blue-200'}`}
+                                style={{ height: `${heightPct}%` }}
+                                title={formatCurrency(m.revenue)}
+                              />
+                            </div>
+                            <span className={`text-xs font-medium ${isCurrentMonth ? 'text-blue-700' : 'text-slate-500'}`}>{m.month}</span>
+                            <span className="text-[11px] text-slate-500">{formatCurrency(m.revenue)}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  );
+                })()}
+              </div>
+            </div>
+          )}
+
+          <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+            <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+              <div className="border-b border-slate-100 px-6 py-4">
+                <h3 className="font-semibold text-slate-950">Heutige Termine</h3>
+                <p className="text-sm text-slate-500">{stats?.today_appointments || 0} Termine geplant</p>
+              </div>
+              <div className="p-5">
+                {stats?.today_details && stats.today_details.length > 0 ? (
+                  <div className="space-y-3">
+                    {stats.today_details.map((apt) => (
+                      <div key={apt.id} className="flex items-center gap-4 rounded-xl border border-blue-100 bg-blue-50 p-3">
+                        <div className="flex h-12 w-14 flex-col items-center justify-center rounded-lg bg-white font-mono shadow-sm">
+                          <span className="text-sm font-bold text-slate-800">{apt.time_start.split(':')[0]}</span>
+                          <span className="text-xs text-slate-500">{apt.time_start.split(':')[1]}</span>
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate font-medium text-slate-950">{apt.patient_name}</p>
+                          <p className="truncate text-sm text-slate-500">{apt.treatment_type}</p>
+                        </div>
+                        {apt.sms_reminder === 1 && <span className="text-xs font-medium text-emerald-600">SMS</span>}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="rounded-xl border border-dashed border-slate-200 p-8 text-center">
+                    <p className="font-medium text-slate-700">Keine Termine heute</p>
+                    <button onClick={() => onNavigate('calendar', 'appointment')} className="mt-2 text-sm font-medium text-blue-700 hover:text-blue-900">+ Termin erstellen</button>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+              <div className="border-b border-slate-100 px-6 py-4">
+                <h3 className="font-semibold text-slate-950">Nächste Termine</h3>
+                <p className="text-sm text-slate-500">{stats?.upcoming_this_week?.length || 0} anstehende Termine diese Woche</p>
+              </div>
+              <div className="p-5">
+                {stats?.upcoming_this_week && stats.upcoming_this_week.length > 0 ? (
+                  <div className="max-h-72 space-y-2 overflow-y-auto">
+                    {stats.upcoming_this_week.map((apt) => {
+                      const date = new Date(apt.date + 'T00:00:00');
+                      return (
+                        <div key={apt.id} className="flex items-center gap-3 rounded-xl p-2.5 hover:bg-slate-50">
+                          <div className="flex h-11 w-11 flex-col items-center justify-center rounded-lg bg-blue-50 text-xs font-bold text-blue-700">
+                            <span>{date.toLocaleDateString('de-AT', { day: '2-digit' })}</span>
+                            <span className="text-[10px] uppercase">{date.toLocaleDateString('de-AT', { weekday: 'short' })}</span>
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate text-sm font-medium text-slate-950">{apt.patient_name}</p>
+                            <p className="truncate text-xs text-slate-500">{apt.time_start} · {apt.treatment_type}</p>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="rounded-xl border border-dashed border-slate-200 p-8 text-center">
+                    <p className="font-medium text-slate-700">Keine Termine diese Woche</p>
+                    <p className="mt-1 text-sm text-slate-500">Der Kalender ist aktuell frei.</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </>
       )}
-
-      {/* Invoice Calculator */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm">
-          <div className="px-5 py-4 border-b border-gray-100 bg-gradient-to-r from-blue-600 to-blue-700">
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="font-semibold text-white">Honorarnoten-Rechner</h3>
-                <p className="text-sm text-blue-100">Berechnung für eine Honorarnote</p>
-              </div>
-              <span className="text-lg text-white">💶</span>
-            </div>
-          </div>
-          <div className="p-5 space-y-5">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">Einheiten</label>
-                <input
-                  type="number"
-                  value={units}
-                  onChange={(e) => setUnits(e.target.value)}
-                  className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 font-mono"
-                  placeholder="10"
-                  aria-label="Anzahl der Einheiten"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">€ / Einheit</label>
-                <input
-                  type="number"
-                  value={rate}
-                  onChange={(e) => setRate(e.target.value)}
-                  className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 font-mono"
-                  placeholder="50"
-                  aria-label="Betrag pro Einheit in Euro"
-                />
-              </div>
-            </div>
-
-            <div className="bg-gradient-to-r from-blue-50 to-blue-100 rounded-lg p-4 border border-blue-200" aria-live="polite">
-              <div className="flex justify-between items-center">
-                <span className="text-blue-700 font-medium">Gesamtbetrag:</span>
-                <span className="text-3xl font-bold text-blue-900 font-mono">
-                  {formatCurrency(calculatedTotal)}
-                </span>
-              </div>
-              <p className="text-xs text-blue-400 mt-2 text-center">
-                Steuerbefreit gemäß §6 Abs.1 Z 19 UStG
-              </p>
-            </div>
-
-            <div className="rounded-lg border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-900">
-              Diese Berechnung dient nur als Sofortvorschau und wird nicht gespeichert. Honorarnoten legen Sie bitte über den Bereich Finanzen an.
-            </div>
-          </div>
-        </div>
-
-        {/* Quick Actions — only visible on mobile */}
-        <div className="block md:hidden bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm">
-          <div className="px-5 py-4 border-b border-gray-100 bg-gray-50">
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="font-semibold text-gray-900">Schnellaktionen</h3>
-                <p className="text-sm text-gray-500">Häufig benötigte Funktionen</p>
-              </div>
-              <span className="text-lg">⚡</span>
-            </div>
-          </div>
-          <div className="p-5">
-            <div className="grid grid-cols-2 gap-3">
-              <button onClick={() => onNavigate('calendar', 'appointment')} className="flex items-center justify-center gap-2 p-4 bg-blue-50 rounded-xl border border-blue-100 hover:border-blue-400 hover:bg-blue-100 transition-all font-medium text-gray-700">
-                <span>📅</span>
-                <span>Neuer Termin</span>
-              </button>
-              <button onClick={() => onNavigate('patients', 'patient')} className="flex items-center justify-center gap-2 p-4 bg-blue-50 rounded-xl border border-blue-100 hover:border-blue-400 hover:bg-blue-100 transition-all font-medium text-gray-700">
-                <span>👤</span>
-                <span>Neuer Patient</span>
-              </button>
-              <button onClick={() => onNavigate('invoices', 'invoice')} className="flex items-center justify-center gap-2 p-4 bg-blue-50 rounded-xl border border-blue-100 hover:border-blue-400 hover:bg-blue-100 transition-all font-medium text-gray-700">
-                <span>📄</span>
-                <span>Neue Rechnung</span>
-              </button>
-              <button onClick={() => onNavigate('dashboard')} className="flex items-center justify-center gap-2 p-4 bg-blue-50 rounded-xl border border-blue-100 hover:border-blue-400 hover:bg-blue-100 transition-all font-medium text-gray-700">
-                <span>📊</span>
-                <span>Übersicht</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
     </div>
   );
 }

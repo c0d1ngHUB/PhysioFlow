@@ -36,6 +36,8 @@ export default function Invoices({ initialModal, onModalConsumed }: InvoicesProp
   const [limit, setLimit] = useState(20);
   const [total, setTotal] = useState(0);
   const [totalPages, setTotalPages] = useState(1);
+  const [calculatorUnits, setCalculatorUnits] = useState('10');
+  const [calculatorRate, setCalculatorRate] = useState('50');
   const [confirmAction, setConfirmAction] = useState<{ message: string; onConfirm: () => void; title?: string; variant?: 'danger' | 'default' } | null>(null);
   const [formData, setFormData] = useState({
     patient_id: '',
@@ -216,6 +218,10 @@ export default function Invoices({ initialModal, onModalConsumed }: InvoicesProp
         .reduce((sum, invoice) => sum + invoice.total, 0),
     [currentMonth, invoices],
   );
+  const calculatorTotal = useMemo(
+    () => Number(calculatorUnits || 0) * Number(calculatorRate || 0),
+    [calculatorUnits, calculatorRate],
+  );
 
   if (loading) {
     return <div className="flex min-h-[40vh] items-center justify-center text-slate-500">Laden…</div>;
@@ -253,6 +259,57 @@ export default function Invoices({ initialModal, onModalConsumed }: InvoicesProp
           <p className="text-sm font-medium text-slate-500">Mahnfälle</p>
           <p className="mt-2 text-3xl font-semibold text-blue-700">{invoices.filter((invoice) => invoice.dunning_level > 0 && !invoice.paid).length}</p>
           <p className="mt-1 text-xs text-slate-500">Mit aktiver Mahnstufe</p>
+        </div>
+      </div>
+
+      <div className="rounded-2xl border border-blue-200 bg-white shadow-sm">
+        <div className="border-b border-blue-100 bg-gradient-to-r from-blue-600 to-blue-700 px-6 py-4">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h3 className="font-semibold text-white">Honorarnoten-Rechner</h3>
+              <p className="text-sm text-blue-100">Sofortvorschau für Einheiten × Satz</p>
+            </div>
+            <button
+              onClick={() => {
+                setFormData((current) => ({ ...current, units: calculatorUnits, rate_per_unit: calculatorRate }));
+                setShowModal(true);
+              }}
+              className="rounded-xl bg-white/95 px-4 py-2 text-sm font-medium text-blue-700 hover:bg-white"
+            >
+              Aus Berechnung erstellen
+            </button>
+          </div>
+        </div>
+        <div className="grid gap-4 p-6 lg:grid-cols-[1fr_1fr_1.2fr] lg:items-end">
+          <div>
+            <label className="mb-1 block text-sm font-medium text-slate-700">Einheiten</label>
+            <input
+              type="number"
+              min="0"
+              step="0.5"
+              value={calculatorUnits}
+              onChange={(event) => setCalculatorUnits(event.target.value)}
+              className="w-full rounded-xl border border-slate-300 px-3 py-2.5 font-mono focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
+              aria-label="Anzahl der Einheiten für die Berechnung"
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-sm font-medium text-slate-700">Satz pro Einheit</label>
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              value={calculatorRate}
+              onChange={(event) => setCalculatorRate(event.target.value)}
+              className="w-full rounded-xl border border-slate-300 px-3 py-2.5 font-mono focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
+              aria-label="Betrag pro Einheit in Euro für die Berechnung"
+            />
+          </div>
+          <div className="rounded-2xl border border-blue-200 bg-blue-50 p-4" aria-live="polite">
+            <p className="text-sm font-medium text-blue-700">Gesamtbetrag</p>
+            <p className="mt-1 text-3xl font-semibold text-blue-950">{formatCurrency(calculatorTotal)}</p>
+            <p className="mt-1 text-xs text-blue-500">Steuerbefreit gemäß §6 Abs.1 Z 19 UStG.</p>
+          </div>
         </div>
       </div>
 
