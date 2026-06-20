@@ -180,35 +180,11 @@ function AppContent() {
     return <LoginPage />;
   }
 
-  const navItems: { id: Page; label: string; icon: string; subItems?: { label: string; action: () => void }[] }[] = [
+  const navItems: { id: Page; label: string; icon: string }[] = [
     { id: 'dashboard', label: 'Auswertung', icon: '📊' },
-    {
-      id: 'calendar',
-      label: 'Behandlungen',
-      icon: '📅',
-      subItems: [
-        { label: 'Kalender', action: () => navigateTo('calendar') },
-        { label: 'Termin erfassen', action: () => navigateTo('calendar', 'appointment') },
-      ],
-    },
-    {
-      id: 'patients',
-      label: 'Stammdaten',
-      icon: '👥',
-      subItems: [
-        { label: 'Patientenliste', action: () => navigateTo('patients') },
-        { label: 'Neuer Patient', action: () => navigateTo('patients', 'patient') },
-      ],
-    },
-    {
-      id: 'invoices',
-      label: 'Finanzen',
-      icon: '💰',
-      subItems: [
-        { label: 'Honorarnoten', action: () => navigateTo('invoices') },
-        { label: 'Zahlungsübersicht', action: () => navigateTo('invoices') },
-      ],
-    },
+    { id: 'calendar', label: 'Behandlungen', icon: '📅' },
+    { id: 'patients', label: 'Stammdaten', icon: '👥' },
+    { id: 'invoices', label: 'Finanzen', icon: '💰' },
     { id: 'expenses', label: 'Ausgaben', icon: '📉' },
   ];
 
@@ -243,19 +219,6 @@ function AppContent() {
                 <span className="mr-3 text-lg">{item.icon}</span>
                 <span>{item.label}</span>
               </button>
-              {item.subItems && currentPage === item.id && (
-                <div className="ml-8 mt-1 space-y-1">
-                  {item.subItems.map((sub) => (
-                    <button
-                      key={sub.label}
-                      onClick={sub.action}
-                      className="block w-full text-left px-3 py-2 text-sm text-text-secondary hover:text-primary hover:bg-gray-50 rounded"
-                    >
-                      {sub.label}
-                    </button>
-                  ))}
-                </div>
-              )}
             </div>
           ))}
         </nav>
