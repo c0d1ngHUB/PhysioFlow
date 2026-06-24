@@ -1,151 +1,111 @@
-# PhysioFlow 🩺
+# PhysioFlow
 
-> **Status:** MVP Fertig ✅  
-> **Erstellt:** 2026-03-23  
-> **Letzte Änderung:** 2026-03-23
+PhysioFlow is a lightweight, local-first practice-management web app for Austrian physiotherapy workflows. It focuses on appointments, patients, invoices/Honorarnoten, expenses and pragmatic day-to-day practice administration.
 
-Terminmanagement für Physiotherapeuten mit SMS-Reminder und österreichkonformen Honorarnoten.
+## Current status
+
+| Area | Status |
+|---|---|
+| Frontend | React + TypeScript + Vite + TailwindCSS |
+| Backend | Node.js/Express + TypeScript |
+| Database | SQLite via `better-sqlite3` |
+| Deployment | Runs on Markus' Mini at `physio-flow.online` / local port `3001` |
+| Scope | Homelab/private practice-software prototype, not a certified medical product |
 
 ## Features
 
-- ✅ **Terminkalender** - Tages-/Wochen-/Monatsansicht mit Drag & Drop
-- ✅ **Patientenverwaltung** - Stammdaten mit Suchfunktion
-- ✅ **SMS-Reminder** - Personalisierte Erinnerungen 24h vor Termin
-- ✅ **Honorarnoten-Rechner** - Österreichkonform mit QR-Code für Registrierkasse
-- ✅ **Dashboard** - Übersicht über Termine und offene Rechnungen
-- ✅ **PDF-Export** - Honorarnoten als druckfähiges PDF
+- Appointment calendar with practice-oriented views
+- Patient management and search
+- Invoice/Honorarnote generation with Austrian tax context
+- PDF generation and QR code support
+- Expenses tracking and dashboard cards
+- Optional SMS reminder integration; simulated when no provider key is configured
+- Responsive UI for desktop and mobile practice workflows
 
-| Feature | Status |
-|---------|--------|
-| Terminkalender (Tag/Woche/Monat) | ✅ |
-| Patientenverwaltung (CRUD) | ✅ |
-| SMS-Reminder-System | ✅ (simuliert) |
-| Honorarnoten mit QR-Code | ✅ |
-| PDF-Export | ✅ |
-| Dashboard mit Statistiken | ✅ |
-| Österreichische Steuerbefreiung (§6 UStG) | ✅ |
+## Tech stack
 
-## Tech Stack
+- React + TypeScript + Vite
+- TailwindCSS
+- Express + TypeScript
+- SQLite (`better-sqlite3`)
+- PDFKit + QRCode
 
-- **Frontend**: React 18 + TypeScript + Vite + TailwindCSS
-- **Backend**: Node.js + Express + TypeScript
-- **Datenbank**: SQLite (better-sqlite3)
-- **PDF-Generation**: PDFKit + QRCode
-
-## Live Deployment
-
-| Resource | URL |
-|----------|-----|
-| **Live URL** | https://physio-flow.online (LAN + WAN) |
-| **Refresh/Rebuild** | `/home/m3kky/refresh_physioflow.sh` |
-| **Dev Server** | http://localhost:5173 (tests before build) |
-
-## Quick Start
-
-### 1. Installation
+## Quickstart
 
 ```bash
-cd /home/m3kky/PhysioFlow
 npm install
-```
-
-### 2. Environment konfigurieren
-
-```bash
 cp .env.example .env
-```
-
-Trage anschließend `SESSION_SECRET`, `PHYSIOFLOW_PASSWORD` und optional `SMS77_API_KEY` ein.
-`NODE_ENV` gehört bewusst nicht in die Projekt-`.env`, weil Vite diese Datei beim Build liest. Setze `NODE_ENV=production` nur in der Runtime-Umgebung, z.B. in `/home/h3m3s/docker/physioflow/app.env`.
-
-### 3. Datenbank initialisieren
-
-Die SQLite-Datenbank wird automatisch beim ersten Start erstellt unter `data/physioflow.db`.
-
-### 4. Development Server starten
-
-```bash
 npm start
 ```
 
-Dies startet (via `concurrently`):
-- Frontend auf http://localhost:5173 (Vite)
-- Backend auf http://localhost:3001 (Express/tsx)
+This starts the development frontend and backend through the configured scripts.
 
-**Oder einzeln:**
+Useful scripts:
+
 ```bash
-npm run dev          # Nur Frontend
-npx tsx server/index.ts  # Nur Backend
+npm run dev          # Vite frontend
+npm run server       # Express backend via tsx
+npm run typecheck    # frontend + server TypeScript checks
+npm run build        # production frontend build
 ```
 
-### 5. Öffnen
+Local URLs:
 
-Browser: http://localhost:5173
-
-## SMS konfigurieren (optional)
-
-Für echte SMS-Benachrichtigungen:
-
-1. Account bei [SMS77.de](https://www.sms77.de/) erstellen
-2. API-Key in `.env` eintragen:
-   ```
-   SMS77_API_KEY=your_api_key_here
-   ```
-3. Server neustarten
-
-**Ohne API-Key** werden SMS nur simuliert (Logs in der Konsole).
-
-## Demo-Daten
-
-- **5 Patienten:** Maria Schmidt, Max Müller, Anna Weber, Thomas Gruber, Lisa Huber
-- **7 Termine:** Heute, morgen, übermorgen
-- **4 Honorarnoten:** 2 bezahlt, 2 offen (€940 ausstehend)
-
-## Projekt-Struktur
-
-```
-PhysioFlow/
-├── src/                    # React Frontend
-│   ├── components/        # UI Komponenten
-│   ├── pages/             # Seiten (Dashboard, Calendar, Patients, Invoices)
-│   ├── types/            # TypeScript Interfaces
-│   └── lib/              # Utilities
-├── server/                # Express Backend
-│   ├── routes/           # API Routes
-│   ├── db/               # SQLite Schema & Connection
-│   └── services/         # Business Logic (SMS, PDF)
-├── data/                  # SQLite Datenbank
-│   └── physioflow.db
-└── SPEC.md               # Vollständige Spezifikation
+```text
+Frontend dev: http://localhost:5173
+Backend/API:   http://localhost:3001
 ```
 
-## Deployment auf neuen Server
+## Runtime configuration
 
-1. Projekt-Dateien kopieren
-2. `npm install` ausführen
-3. `.env` mit neuen API-Keys anpassen
-4. `npm start` starten
+Copy `.env.example` to `.env` and set deployment-specific values there. Never commit real secrets.
 
-Keine weitere Konfiguration nötig – SQLite ist portabel! 🐳
+Common values:
 
-## Nächste Schritte (Phase 2)
+```dotenv
+SESSION_SECRET=change-me
+PHYSIOFLOW_PASSWORD=change-me
+SMS77_API_KEY=
+```
 
-- [ ] Ausgabenverwaltung
-- [ ] Mahnwesen
-- [ ] Gutscheine
-- [ ] Kalender-Sync (iCal)
-- [ ] Gruppenkalender (Multi-Therapeuten)
-- [ ] Online-Terminbuchung
+Without `SMS77_API_KEY`, SMS reminders are simulated/logged only.
 
-## Dokumentation
+## Repository layout
 
-| Dokument | Pfad |
-|----------|------|
-| README | Dieses Dokument |
-| Spezifikation | `SPEC.md` |
-| Lastenheft | `LASTENHEFT.md` / `.pdf` |
-| Technisch | Im Projekt-Ordner |
+```text
+src/          React frontend, pages, components and state
+server/       Express API, SQLite migrations, services
+public/       Static assets, manifest, legal pages
+scripts/      Maintenance/cron helpers
+screenshots/  UI reference screenshots
+SPEC.md       Product/specification reference
+TODO.md       Open work and backlog notes
+```
 
-## Lizenz
+## Deployment notes
 
-Privatnutzung – © 2026
+The current homelab deployment is served from the Mini and publicly reachable as:
+
+```text
+https://physio-flow.online
+```
+
+Keep host-specific secrets, database files, runtime backups and logs outside Git.
+
+## Data hygiene policy
+
+- Do not commit `.env`, SQLite DB files, WAL/SHM files, backups, logs or `node_modules`.
+- Keep screenshots only when they are intentional UI references.
+- Update this README and `docs/STATUS.md` when the deployed feature set changes.
+
+## Documentation
+
+| Document | Purpose |
+|---|---|
+| `docs/STATUS.md` | Current project status and hygiene notes |
+| `SPEC.md` | Product specification and UX goals |
+| `TODO.md` | Open implementation/backlog notes |
+
+## License / usage
+
+Private prototype for Markus' environment unless relicensed explicitly.

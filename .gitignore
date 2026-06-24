@@ -1,14 +1,22 @@
+# Node / build output
 node_modules/
 dist/
-data/*.db
+coverage/
+*.tsbuildinfo
+
+# Runtime data
 .env
-.env.local
-*.log
-.DS_Store
-backups/
-*.db-shm
-*.db-wal
-*.bak
+.env.*
+!.env.example
 data/*.db
 data/*.db-shm
 data/*.db-wal
+*.db-shm
+*.db-wal
+backups/
+*.log
+
+# Local/editor artifacts
+.DS_Store
+*.bak
+*.orig
