@@ -13,7 +13,7 @@
     "start": "concurrently \"npm run dev\" \"npm run server\""
   },
   "dependencies": {
-    "@tailwindcss/postcss": "^4.2.2",
+    "@tailwindcss/postcss": "^4.3.3",
     "@vitejs/plugin-react": "^6.1.0",
     "autoprefixer": "^10.4.27",
     "bcrypt": "^6.0.0",
