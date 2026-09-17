@@ -25,7 +25,7 @@
     "express": "^5.2.1",
     "express-rate-limit": "^8.4.0",
     "express-session": "^1.19.0",
-    "helmet": "^8.1.0",
+    "helmet": "^8.3.0",
     "pdfkit": "^0.18.0",
     "postcss": "^8.5.26",
     "qrcode": "^1.5.4",
