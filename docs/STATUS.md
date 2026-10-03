@@ -1,6 +1,6 @@
 # PhysioFlow Status
 
-Last updated: 2026-06-25
+Repository documentation reviewed: 2026-10-03 (deployment not revalidated)
 
 ## Snapshot
 
@@ -25,5 +25,5 @@ PhysioFlow is a local-first web app for Austrian physiotherapy practice administ
 ## Recommended next work
 
 1. Keep README aligned with deployed features.
-2. Add a compact architecture/deployment note if the service grows beyond single-host deployment.
-3. Add CI for typecheck/build if the public repo becomes a handoff or collaboration point.
+2. Review the runtime and API guidance in [README](../README.md) when configuration changes.
+3. Keep the existing [CI workflow](../.github/workflows/ci.yml) on `master` passing (`npm ci`, `npm run typecheck`, `npm run build`).

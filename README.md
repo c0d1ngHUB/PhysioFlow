@@ -33,12 +33,17 @@ PhysioFlow is a lightweight, local-first practice-management web app for Austria
 ## Quickstart
 
 ```bash
-npm install
+npm ci
 cp .env.example .env
+npm run db:migrate
+# Replace the example password before creating the first account.
+npx tsx server/db/seed-admin.ts admin YOUR_LOCAL_PASSWORD admin
 npm start
 ```
 
-This starts the development frontend and backend through the configured scripts.
+Use Node.js 22 (as in [CI](.github/workflows/ci.yml)); native SQLite/bcrypt dependencies may need a compiler toolchain if prebuilt binaries are unavailable. Run commands from the repository root. The migration command creates `data/physioflow.db` and the schema before the seed command writes a bcrypt-backed admin account. The seed command also updates an existing username, so use it deliberately; it prints the resulting hash and accepts the password as a command-line argument.
+
+`npm start` starts the development frontend and backend. Log in with the seeded username/password. Server startup also applies pending migrations; it does not create a default user.
 
 Useful scripts:
 
@@ -60,13 +65,15 @@ Backend/API:   http://localhost:3001
 
 Copy `.env.example` to `.env` and set deployment-specific values there. Never commit real secrets.
 
-Common values:
+| Variable | Behavior |
+|---|---|
+| `PORT` | Express port, default `3001`; the Vite proxy targets port `3001` independently. |
+| `SESSION_SECRET` | Required in production; replace the example with a long random secret. Development falls back to `dev-secret` if unset. |
+| `PHYSIOFLOW_ORIGIN` | Exact production origin allowed by CORS/CSRF; defaults to `https://physio-flow.online`. Development uses fixed localhost/127.0.0.1 origins. |
+| `SMS77_API_KEY` | Optional SMS provider key. |
+| `NODE_ENV` | Set to `production` in the runtime environment, not the Vite `.env` file. |
 
-```dotenv
-SESSION_SECRET=change-me
-PHYSIOFLOW_PASSWORD=change-me
-SMS77_API_KEY=
-```
+Authentication reads bcrypt hashes from the SQLite `users` table. `PHYSIOFLOW_PASSWORD` is not read by the current server; use the admin seed script to create or update credentials.
 
 Without `SMS77_API_KEY`, SMS reminders are simulated/logged only.
 
@@ -90,7 +97,22 @@ The current homelab deployment is served from the Mini and publicly reachable as
 https://physio-flow.online
 ```
 
-Keep host-specific secrets, database files, runtime backups and logs outside Git.
+For a production build, run `npm run typecheck` and `npm run build`, then start the backend with `NODE_ENV=production npm run server`. Express serves `dist/` and `/api` on the same port. Configure `SESSION_SECRET` and `PHYSIOFLOW_ORIGIN` first; production sessions use secure cookies and require HTTPS. The server trusts one proxy hop, so match the reverse-proxy topology to that setting.
+
+[ecosystem.config.cjs](ecosystem.config.cjs) is a host-specific PM2 example with `/home/pi/PhysioFlow` paths, not a portable installer. Adapt those paths before use. The database and SQLite session store live in `data/physioflow.db`; backup/restore must account for SQLite WAL consistency. Keep host-specific secrets, database files, runtime backups and logs outside Git.
+
+The public deployment URL is a documented host configuration, not a live availability check.
+
+## Validation and API flow
+
+```bash
+npm run typecheck
+npm run build
+```
+
+These are the existing CI checks on `master`; there is no `npm test` script. `build` checks frontend TypeScript and emits `dist/`; `typecheck` also covers the server. These checks do not establish browser or deployment acceptance.
+
+The Vite development server proxies `/api` to Express. After login, clients keep the session cookie and send the returned CSRF token as `x-csrf-token` for mutations; a permitted `Origin` is also required. API data routes require authentication, and voucher routes require the admin role. See [server/index.ts](server/index.ts) and [server/utils/csrf.ts](server/utils/csrf.ts).
 
 ## Data hygiene policy
 
@@ -102,9 +124,9 @@ Keep host-specific secrets, database files, runtime backups and logs outside Git
 
 | Document | Purpose |
 |---|---|
-| `docs/STATUS.md` | Current project status and hygiene notes |
-| `SPEC.md` | Product specification and UX goals |
-| `TODO.md` | Open implementation/backlog notes |
+| [docs/STATUS.md](docs/STATUS.md) | Current project status and hygiene notes |
+| [SPEC.md](SPEC.md) | Product specification and UX goals |
+| [TODO.md](TODO.md) | Open implementation/backlog notes |
 
 ## License / usage
 
