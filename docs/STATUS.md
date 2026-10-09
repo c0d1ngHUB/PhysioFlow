@@ -26,4 +26,4 @@ PhysioFlow is a local-first web app for Austrian physiotherapy practice administ
 
 1. Keep README aligned with deployed features.
 2. Review the runtime and API guidance in [README](../README.md) when configuration changes.
-3. Keep the existing [CI workflow](../.github/workflows/ci.yml) on `master` passing (`npm ci`, `npm run typecheck`, `npm run build`).
+3. Keep the existing [CI workflow](../.github/workflows/ci.yml) on `master` passing (`npm ci`, `npm run check:react-runtime`, `npm run typecheck`, `npm run build`).

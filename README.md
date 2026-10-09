@@ -48,10 +48,11 @@ Use Node.js 22 (as in [CI](.github/workflows/ci.yml)); native SQLite/bcrypt depe
 Useful scripts:
 
 ```bash
-npm run dev          # Vite frontend
-npm run server       # Express backend via tsx
-npm run typecheck    # frontend + server TypeScript checks
-npm run build        # production frontend build
+npm run dev                  # Vite frontend
+npm run server               # Express backend via tsx
+npm run check:react-runtime  # React/ReactDOM production import guard
+npm run typecheck            # frontend + server TypeScript checks
+npm run build                # production frontend build
 ```
 
 Local URLs:
@@ -97,7 +98,7 @@ The current homelab deployment is served from the Mini and publicly reachable as
 https://physio-flow.online
 ```
 
-For a production build, run `npm run typecheck` and `npm run build`, then start the backend with `NODE_ENV=production npm run server`. Express serves `dist/` and `/api` on the same port. Configure `SESSION_SECRET` and `PHYSIOFLOW_ORIGIN` first; production sessions use secure cookies and require HTTPS. The server trusts one proxy hop, so match the reverse-proxy topology to that setting.
+For a production build, run `npm run check:react-runtime`, `npm run typecheck` and `npm run build`, then start the backend with `NODE_ENV=production npm run server`. Express serves `dist/` and `/api` on the same port. Configure `SESSION_SECRET` and `PHYSIOFLOW_ORIGIN` first; production sessions use secure cookies and require HTTPS. The server trusts one proxy hop, so match the reverse-proxy topology to that setting.
 
 [ecosystem.config.cjs](ecosystem.config.cjs) is a host-specific PM2 example with `/home/pi/PhysioFlow` paths, not a portable installer. Adapt those paths before use. The database and SQLite session store live in `data/physioflow.db`; backup/restore must account for SQLite WAL consistency. Keep host-specific secrets, database files, runtime backups and logs outside Git.
 
@@ -106,11 +107,12 @@ The public deployment URL is a documented host configuration, not a live availab
 ## Validation and API flow
 
 ```bash
+npm run check:react-runtime
 npm run typecheck
 npm run build
 ```
 
-These are the existing CI checks on `master`; there is no `npm test` script. `build` checks frontend TypeScript and emits `dist/`; `typecheck` also covers the server. These checks do not establish browser or deployment acceptance.
+These are the existing CI checks on `master`; there is no `npm test` script. `check:react-runtime` verifies exact React/ReactDOM version alignment and imports the client and server runtime entry points in production mode. `build` checks frontend TypeScript and emits `dist/`; `typecheck` also covers the server. These checks do not establish browser or deployment acceptance.
 
 The Vite development server proxies `/api` to Express. After login, clients keep the session cookie and send the returned CSRF token as `x-csrf-token` for mutations; a permitted `Origin` is also required. API data routes require authentication, and voucher routes require the admin role. See [server/index.ts](server/index.ts) and [server/utils/csrf.ts](server/utils/csrf.ts).
 
