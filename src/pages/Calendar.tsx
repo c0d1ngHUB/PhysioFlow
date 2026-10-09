@@ -228,9 +228,15 @@ export default function Calendar({ initialModal, onModalConsumed }: CalendarProp
   async function fetchAppointments() {
     setLoading(true);
     try {
-      const params = new URLSearchParams({ date: selectedDate, view: viewMode });
-      if (selectedTherapistId !== 'all') params.set('therapist_id', selectedTherapistId);
-      const res = await apiFetch(`/api/appointments?${params.toString()}`, { credentials: 'include' });
+      // POST variant keeps date/therapist filters out of the URL (CWE-598).
+      const body: Record<string, string> = { date: selectedDate, view: viewMode };
+      if (selectedTherapistId !== 'all') body.therapist_id = selectedTherapistId;
+      const res = await apiFetch('/api/appointments/query', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
       const data = await res.json();
       if (data.success) setAppointments(data.data);
       else showToast(data.error || 'Termine konnten nicht geladen werden', 'error');
