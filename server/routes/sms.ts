@@ -3,7 +3,7 @@ import db from '../db/index.js';
 import { formatPhone, getSmsProviderStatus, sendSms } from '../services/sms.js';
 import { requireRole } from '../utils/auth.js';
 import { respondWithServerError } from '../utils/httpErrors.js';
-import { validateBody, smsSendSchema } from '../utils/validation.js';
+import { validateBody, smsSendSchema, smsLogQuerySchema } from '../utils/validation.js';
 
 const router = Router();
 
@@ -96,12 +96,14 @@ router.post('/schedule', requireRole('admin'), (req, res) => {
   }
 });
 
-// Get SMS log for appointment
-router.get('/log/:appointmentId', (req, res) => {
+// Get SMS log for appointment.
+// Body-based only: the appointment id must not travel in a URL (CWE-598).
+// The former GET /log/:appointmentId was removed on 2026-10-09.
+router.post('/log/query', validateBody(smsLogQuerySchema), (req, res) => {
   try {
     const logs = db.prepare(`
       SELECT * FROM sms_log WHERE appointment_id = ? ORDER BY sent_at DESC
-    `).all(req.params.appointmentId);
+    `).all(req.body.appointment_id);
     
     res.json({ success: true, data: logs });
   } catch (error) {

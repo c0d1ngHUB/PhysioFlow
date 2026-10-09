@@ -58,6 +58,10 @@ export const smsSendSchema = z.object({
   appointment_time: z.string().regex(/^\d{2}:\d{2}$/, 'Zeit muss HH:MM sein'),
 });
 
+export const smsLogQuerySchema = z.object({
+  appointment_id: z.union([z.string().min(1), z.number()]),
+});
+
 export function validateBody(schema: z.ZodSchema) {
   return (req: Request, res: Response, next: NextFunction) => {
     const result = schema.safeParse(req.body);
