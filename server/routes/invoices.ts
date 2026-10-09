@@ -75,21 +75,8 @@ function readInvoiceFilters(source: Record<string, unknown>): InvoiceFilters {
   };
 }
 
-// The GET variant still accepts the historic query filters (backwards compatible).
-// Callers that want the identifiers out of the URL use POST /query instead.
-function filtersFromQuery(req: Request): InvoiceFilters {
-  const { paid, patient_id } = req.query as Record<string, unknown>;
-  return {
-    paid: paid === undefined ? undefined : String(paid),
-    patientId: patient_id === undefined ? undefined : String(patient_id),
-  };
-}
-
-router.get('/', (req, res) => {
-  listInvoices(req, res, filtersFromQuery(req));
-});
-
-// Body-based variant: avoids CWE-598 by keeping sensitive filters out of the URL.
+// Only body-based listing remains: identifiers must never travel in a URL
+// (CWE-598). GET was removed on 2026-10-09; the old query parser went with it.
 router.post('/query', validateBody(invoiceQuerySchema), (req, res) => {
   listInvoices(req, res, readInvoiceFilters(req.body as Record<string, unknown>));
 });

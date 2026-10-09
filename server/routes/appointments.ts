@@ -60,23 +60,8 @@ function readAppointmentFilters(source: Record<string, unknown>): AppointmentFil
   };
 }
 
-// The GET variant still accepts the historic query filters (backwards compatible).
-// Callers that want the identifiers out of the URL use POST /query instead.
-function filtersFromQuery(req: Request): AppointmentFilters {
-  const { date, patient_id, therapist_id, view } = req.query as Record<string, unknown>;
-  return {
-    date: date === undefined ? undefined : String(date),
-    patientId: patient_id === undefined ? undefined : String(patient_id),
-    therapistId: therapist_id === undefined ? undefined : String(therapist_id),
-    view: view === undefined ? undefined : String(view),
-  };
-}
-
-router.get('/', (req, res) => {
-  listAppointments(req, res, filtersFromQuery(req));
-});
-
-// Body-based variant: avoids CWE-598 by keeping sensitive filters out of the URL.
+// Only body-based listing remains: identifiers must never travel in a URL
+// (CWE-598). GET was removed on 2026-10-09; the old query parser went with it.
 router.post('/query', validateBody(appointmentQuerySchema), (req, res) => {
   listAppointments(req, res, readAppointmentFilters(req.body as Record<string, unknown>));
 });
