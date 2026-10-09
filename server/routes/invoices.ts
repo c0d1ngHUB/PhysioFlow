@@ -1,12 +1,15 @@
 import { Router } from 'express';
+import type { Request, Response } from 'express';
 import db from '../db/index.js';
 import PDFDocument from 'pdfkit';
 import QRCode from 'qrcode';
 import { requireRole } from '../utils/auth.js';
 import { respondWithServerError } from '../utils/httpErrors.js';
-import { formatCurrency, getSingleQueryValue } from '../utils/formatting.js';
+import { formatCurrency } from '../utils/formatting.js';
 import { logAudit, getAuditContext, safeJson } from '../utils/auditLog.js';
 import { getPaginationParams, paginatedResponse } from '../utils/pagination.js';
+import { z } from 'zod';
+import { validateBody } from '../utils/validation.js';
 
 const router = Router();
 type SqlParam = string | number | null;
@@ -44,9 +47,45 @@ function generateInvoiceNumber(): string {
 }
 
 // Get all invoices
+// Shared filter extraction: GET reads the query string, POST reads the JSON body.
+// Avoids CWE-598 (sensitive data in GET query) by offering a body-based variant.
+type InvoiceFilters = {
+  paid: string | undefined;
+  patientId: string | undefined;
+};
+
+const invoiceQuerySchema = z.object({
+  paid: z.union([z.string(), z.boolean()]).optional(),
+  patient_id: z.union([z.string(), z.number()]).optional(),
+});
+
+function readInvoiceFilters(source: Record<string, unknown>): InvoiceFilters {
+  const single = (value: unknown): string | undefined => {
+    if (value === undefined || value === null) return undefined;
+    if (typeof value === 'boolean') return value ? 'true' : 'false';
+    if (Array.isArray(value)) {
+      const first = value.find((entry) => entry !== undefined && entry !== null);
+      return first === undefined ? undefined : String(first);
+    }
+    return String(value);
+  };
+  return {
+    paid: single(source.paid),
+    patientId: single(source.patient_id),
+  };
+}
+
 router.get('/', (req, res) => {
-  const paid = getSingleQueryValue(req.query.paid);
-  const patientId = getSingleQueryValue(req.query.patient_id);
+  listInvoices(req, res, readInvoiceFilters(req.query as Record<string, unknown>));
+});
+
+// Body-based variant: avoids CWE-598 by keeping sensitive filters out of the URL.
+router.post('/query', validateBody(invoiceQuerySchema), (req, res) => {
+  listInvoices(req, res, readInvoiceFilters(req.body as Record<string, unknown>));
+});
+
+function listInvoices(req: Request, res: Response, filters: InvoiceFilters) {
+  const { paid, patientId } = filters;
 
   let query = `
     SELECT i.*, p.first_name || ' ' || p.last_name as patient_name,
@@ -90,7 +129,7 @@ router.get('/', (req, res) => {
   } catch (error) {
     respondWithServerError(res, error, 'Fehler beim Laden der Honorarnoten:', 'Honorarnoten konnten nicht geladen werden.');
   }
-});
+}
 
 // Get single invoice
 router.get('/:id', (req, res) => {

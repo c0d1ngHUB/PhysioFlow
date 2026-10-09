@@ -68,13 +68,17 @@ export default function Invoices({ initialModal, onModalConsumed }: InvoicesProp
 
   async function fetchInvoices() {
     try {
-      const params = new URLSearchParams();
-      if (filterPaid === 'paid') params.set('paid', 'true');
-      if (filterPaid === 'unpaid') params.set('paid', 'false');
-      params.set('page', String(page));
-      params.set('limit', String(limit));
+      // POST variant keeps patient/paid filters out of the URL (CWE-598).
+      const body: Record<string, string | number> = { page, limit };
+      if (filterPaid === 'paid') body.paid = 'true';
+      if (filterPaid === 'unpaid') body.paid = 'false';
 
-      const res = await apiFetch(`/api/invoices${params.toString() ? `?${params.toString()}` : ''}`, { credentials: 'include' });
+      const res = await apiFetch('/api/invoices/query', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
       const data = await res.json();
       if (data.success) {
         setInvoices(data.data);
@@ -106,7 +110,13 @@ export default function Invoices({ initialModal, onModalConsumed }: InvoicesProp
 
   async function fetchAppointments(patientId: string) {
     try {
-      const res = await apiFetch(`/api/appointments?patient_id=${patientId}`, { credentials: 'include' });
+      // POST variant: patient filter stays out of the URL (CWE-598).
+      const res = await apiFetch('/api/appointments/query', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ patient_id: patientId }),
+      });
       const data = await res.json();
       if (data.success) {
         setAppointments(data.data);

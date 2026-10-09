@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import type { Request, Response } from 'express';
 import db from '../db/index.js';
 import { requireAuth, requireRole } from '../utils/auth.js';
 import { respondWithServerError } from '../utils/httpErrors.js';
@@ -6,7 +7,7 @@ import { getWeekRange } from '../utils/date.js';
 import { appointmentSchema, appointmentUpdateSchema, validateBody } from '../utils/validation.js';
 import { logAudit, getAuditContext, safeJson } from '../utils/auditLog.js';
 import { getPaginationParams, paginatedResponse } from '../utils/pagination.js';
-import { getSingleQueryValue } from '../utils/formatting.js';
+import { z } from 'zod';
 
 const router = Router();
 type SqlParam = string | number | null;
@@ -26,11 +27,50 @@ function escapeIcs(value: string): string {
 
 
 // Get all appointments (with optional date/week/month filter)
+// Shared filter extraction: GET reads the query string, POST reads the JSON body.
+// Avoids CWE-598 (sensitive data in GET query) by offering a body-based variant.
+type AppointmentFilters = {
+  date: string | undefined;
+  patientId: string | undefined;
+  therapistId: string | undefined;
+  view: string | undefined;
+};
+
+const appointmentQuerySchema = z.object({
+  date: z.string().optional(),
+  patient_id: z.union([z.string(), z.number()]).optional(),
+  therapist_id: z.union([z.string(), z.number()]).optional(),
+  view: z.string().optional(),
+});
+
+function readAppointmentFilters(source: Record<string, unknown>): AppointmentFilters {
+  const single = (value: unknown): string | undefined => {
+    if (value === undefined || value === null) return undefined;
+    if (Array.isArray(value)) {
+      const first = value.find((entry) => entry !== undefined && entry !== null);
+      return first === undefined ? undefined : String(first);
+    }
+    return String(value);
+  };
+  return {
+    date: single(source.date),
+    patientId: single(source.patient_id),
+    therapistId: single(source.therapist_id),
+    view: single(source.view),
+  };
+}
+
 router.get('/', (req, res) => {
-  const date = getSingleQueryValue(req.query.date);
-  const patientId = getSingleQueryValue(req.query.patient_id);
-  const therapistId = getSingleQueryValue(req.query.therapist_id);
-  const view = getSingleQueryValue(req.query.view);
+  listAppointments(req, res, readAppointmentFilters(req.query as Record<string, unknown>));
+});
+
+// Body-based variant: avoids CWE-598 by keeping sensitive filters out of the URL.
+router.post('/query', validateBody(appointmentQuerySchema), (req, res) => {
+  listAppointments(req, res, readAppointmentFilters(req.body as Record<string, unknown>));
+});
+
+function listAppointments(req: Request, res: Response, filters: AppointmentFilters) {
+  const { date, patientId, therapistId, view } = filters;
 
   let query = `
     SELECT
@@ -104,7 +144,7 @@ router.get('/', (req, res) => {
   } catch (error) {
     respondWithServerError(res, error, 'Fehler beim Laden der Termine:', 'Termine konnten nicht geladen werden.');
   }
-});
+}
 
 router.get('/ical', requireAuth, (_req, res) => {
   try {
