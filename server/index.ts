@@ -312,6 +312,15 @@ async function main() {
   // Error handling middleware
   // ---------------------------------------------------------------------------
   app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+    // Client-Fehler des Body-Parsers (z. B. ungültiges JSON, zu großer Body) tragen einen
+    // 4xx-Status. Sie sind kein Serverfehler und dürfen weder 500 liefern noch einen
+    // Stacktrace ins Log schreiben.
+    const clientStatus = (err as { status?: unknown; statusCode?: unknown }).status
+      ?? (err as { statusCode?: unknown }).statusCode;
+    if (typeof clientStatus === 'number' && clientStatus >= 400 && clientStatus < 500) {
+      res.status(clientStatus).json({ success: false, error: 'Ungültige Anfrage.' });
+      return;
+    }
     console.error('═══════════════════════════════════════════════════════════════');
     console.error('GLOBAL ERROR HANDLER CAUGHT:');
     console.error('Error:', err);
